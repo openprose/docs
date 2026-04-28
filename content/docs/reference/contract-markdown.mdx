@@ -1,0 +1,24 @@
+---
+title: Contract Markdown
+description: The canonical Markdown format for OpenProse programs and services.
+---
+
+Contract Markdown is the file format every `.md` program and service is written in. The spec defines which sections the runtime recognizes, the header hierarchy that distinguishes contract sections from inline components, and the frontmatter fields that identify a file's `kind`. It is the file to consult when you are writing a program by hand, when you are unsure whether `### Strategies` belongs above or below `### Ensures`, or when you are building a tool that needs to parse Contract Markdown the way the runtime does.
+
+<Callout type="info">
+  The canonical spec lives in the `prose` repo and is the source of truth. Read
+  it on GitHub:
+  [skills/open-prose/contract-markdown.md](https://github.com/openprose/prose/blob/main/skills/open-prose/contract-markdown.md).
+</Callout>
+
+## At a glance
+
+- **Core Shape and Canonical Sections** -- the recognized list (`Requires`, `Ensures`, `Strategies`, `Errors`, `Invariants`, plus structural sections) and the order conventions.
+- **Header Hierarchy** -- `###` for contract sections, `##` for inline components, and the rules for nesting.
+- **Frontmatter** -- the `name` and `kind` fields plus optional metadata.
+- **Component Extraction and Compatibility Block Syntax** -- how inline `## component-name` blocks are extracted and how compatibility ranges are written.
+- **Tests, Execution Sections, and Typed Caller Inputs** -- the `### Fixtures`/`### Expects` test grammar, pinned `### Execution` blocks, and `run`/`run[]` reserved types.
+
+## When to read this
+
+Read the canonical spec when [Concepts: Contracts](../concepts/contracts) does not go deep enough on section grammar, when you are authoring a new program or service file by hand and want to confirm the header hierarchy, or when you are validating a custom Markdown parser against the runtime's expectations. The Concepts page covers the contract surface; the spec covers every recognized section and its rules.

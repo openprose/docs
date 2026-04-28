@@ -1,0 +1,20 @@
+---
+title: Examples
+description: Five hand-picked OpenProse programs with narrative framing.
+---
+
+Five programs, picked to demonstrate the language's range. Each example page narrates the contract, embeds the program, and points at the canonical source on GitHub for the supporting service files.
+
+The five featured here span beginner-to-advanced and align with the three flagship patterns covered in [Composing Multi-Agent Workflows](../guides/composing-multi-agent-workflows). Use the table to pick the one that matches the shape of work you have in mind.
+
+| Example                | Difficulty   | Pattern                                       |
+| ---------------------- | ------------ | --------------------------------------------- |
+| Hello World            | Beginner     | Single-service, single output                 |
+| Research and Summarize | Beginner     | Sequential pipeline (research-then-summarize) |
+| Code Review            | Intermediate | Single-service with structured Ensures        |
+| Captain's Chair        | Advanced     | Multi-agent with arbiter                      |
+| Parallel Reviews       | Advanced     | Fan-out then synthesize                       |
+
+Hello World and Research-and-Summarize are the right starting points: both are single files with no service composition. Code Review introduces a richer `### Ensures` shape (per-issue severity and recommendations) without adding services. Parallel Reviews and Captain's Chair are the multi-service cases -- the first runs three reviewers in parallel and merges, the second adds an arbiter that owns the final call.
+
+The full examples directory holds 30+ programs, including evals, choice-block walkthroughs, and persistent-agent recipes. Browse the rest at [`prose/skills/open-prose/examples/`](https://github.com/openprose/prose/tree/main/skills/open-prose/examples). The five featured here were curated to span beginner-to-advanced; everything else lives on GitHub and ships with the skill.

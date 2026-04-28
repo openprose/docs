@@ -1,0 +1,51 @@
+---
+title: Execution Model
+description: Precise semantics of how an OpenProse program is executed.
+---
+
+An OpenProse program runs in two phases: Forme wires services, then the Prose VM executes them. This page describes each phase precisely. The canonical source is [`prose.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md); the page below is a hosted summary of the parts that come up most often.
+
+## Lifecycle
+
+A run proceeds through these steps from invocation to completion.
+
+1. **Wiring (Phase 1).** Forme reads the entry point, walks its `### Services` list, resolves each service name to a `.md` file, and matches every service's `### Requires` against another service's `### Ensures` (or against the program's own caller inputs). The output is a topologically sorted manifest written to `.prose/runs/<id>/manifest.md`. For single-component programs (no `### Services` block), this phase is skipped.
+2. **Caller-input binding.** The VM resolves each entry from the program's own `### Requires`. Values come from CLI args (`-- key: value`), config files, the calling program for nested invocations, or -- if none of those provide a value -- a user prompt via `ask_user`. Each input is written to `bindings/caller/{name}.md`.
+3. **Workspace creation.** The VM creates `workspace/{service}/` and `bindings/{service}/` under the run directory for each service named in the manifest.
+4. **Service execution.** The VM walks the manifest in execution order. For each service, it builds a session prompt (the service definition, the input file paths, the workspace path, the output instructions) and spawns a subagent via `spawn_session`. Independent services run in parallel. The subagent writes everything to its private workspace and returns a confirmation, not the full output.
+5. **Copy-on-return.** When a subagent completes, the VM reads its `__error.md` if present (see Errors below); otherwise, it copies each declared `Ensures` output from `workspace/{service}/` to `bindings/{service}/` and appends a completion marker to `state.md`. Downstream services read from `bindings/`, never from `workspace/`.
+6. **Output collection.** After all services complete, the VM reads the program's caller-facing `### Ensures` outputs from `bindings/` and returns them to the caller.
+7. **Finalization.** The VM evaluates `### Invariants` across all services, appends `---end <ISO8601 timestamp>` to `state.md`, and -- for top-level runs -- presents the final output.
+
+## State
+
+State lives on disk under `.prose/runs/<id>/`. The VM is the only writer to `state.md` (an append-only event log); subagents write only to their own workspaces. Caller inputs land in `bindings/caller/`; service outputs land in `bindings/{service}/`. Persistent agents with `persist: project` or `persist: user` write to `.prose/agents/` or `~/.prose/agents/` respectively; their lifetime exceeds the run.
+
+The canonical state-management spec, including filesystem layout, run ID format, the event-marker grammar in `state.md`, and resumption rules, lives at [`skills/open-prose/state/`](https://github.com/openprose/prose/tree/main/skills/open-prose/state) on GitHub.
+
+## Errors and recovery
+
+A service signals a declared error by writing `workspace/{service}/__error.md` instead of its outputs. The error name must match an entry in the service's `### Errors`; undeclared errors propagate as unhandled faults. When the VM sees `__error.md`, it checks the calling program's `### Ensures` for a conditional clause that covers the failure (e.g., "if research is unavailable: partial report with explanation"). If one matches, the VM produces the degraded output, skips the errored service's downstream dependents, and returns. If no clause covers the error, the VM appends `---error <timestamp> <message>` to `state.md` and propagates the error to the caller.
+
+Thrown errors -- exceptions from inside a subagent session that the service did not declare -- are unhandled faults. They terminate the run and are recorded in `state.md` with the service name and error message. The runtime distinguishes declared (recoverable, contract-shaped) errors from thrown (uncovered) ones.
+
+## Run trace anatomy
+
+Every run produces a directory under `.prose/runs/`. The typical structure is below; the canonical layout including `services/`, persistent-agent state, and delegate sub-directories lives in [`prose.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md) under "Directory Structure."
+
+```text
+.prose/runs/<id>/
+├── manifest.md       # Forme's wiring decisions (Phase 1 output)
+├── program.md        # Copy of the entry point at wire time
+├── services/         # Component source files copied at wire time
+├── workspace/        # Private working directories, one per service
+├── bindings/         # Public outputs; declared Ensures only
+├── state.md          # Append-only execution log
+└── agents/           # Persistent agent memory (when used)
+```
+
+The trace is the durable record of the run. Diff two traces to see exactly which call shape changed; replay one to resume from a failure. Run IDs follow `{YYYYMMDD}-{HHMMSS}-{random6}`, e.g. `20260317-143052-a7b3c9`.
+
+## Read the full spec
+
+The canonical execution semantics, including the complete event-marker grammar, runtime delegation protocol, persistent-agent memory model, and composite expansion rules, live in the language spec at [`prose/skills/open-prose/prose.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md). Treat that file as authoritative.

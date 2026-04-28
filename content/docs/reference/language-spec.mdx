@@ -1,0 +1,24 @@
+---
+title: Language Spec
+description: The canonical Prose VM execution semantics: lifecycle, state, errors, and run-trace anatomy.
+---
+
+The Language Spec is the authoritative description of the Prose VM: how a run is wired and executed, what `state.md` records, how errors propagate, and what every directory in `.prose/runs/<id>/` is for. It is the file a host runtime implementer reads end to end before shipping; everyone else dips into it for the questions Concepts pages do not answer.
+
+<Callout type="info">
+  The canonical spec lives in the `prose` repo and is the source of truth. Read
+  it on GitHub:
+  [skills/open-prose/prose.md](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md).
+</Callout>
+
+## At a glance
+
+- **The Execution Algorithm** -- the six-step lifecycle from manifest read to finalization.
+- **Directory Structure** -- the canonical layout of `.prose/runs/<id>/`, including `services/`, `workspace/`, `bindings/`, and `agents/`.
+- **State Management** -- the append-only event-marker grammar in `state.md` and the run ID format.
+- **Error Handling** -- the four-step protocol for declared errors, downstream skipping, and caller-contract recovery.
+- **Spawning Sessions and Runtime Delegation** -- the subagent contract, parallel execution, and the yield/resume protocol.
+
+## When to read this
+
+Read the canonical spec when [Concepts: The Intelligent VM](../concepts/intelligent-vm) leaves a question unanswered, when you are implementing a new host runtime adapter and need the primitive contracts verbatim, or when you are debugging a run trace and need the exact event-marker semantics. The Concepts page covers the model; the spec covers the wire.

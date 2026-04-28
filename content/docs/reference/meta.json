@@ -1,0 +1,12 @@
+{
+  "title": "Reference",
+  "pages": [
+    "overview",
+    "command-reference",
+    "execution-model",
+    "language-spec",
+    "forme-spec",
+    "contract-markdown",
+    "prosescript"
+  ]
+}

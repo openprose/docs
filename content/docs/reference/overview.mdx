@@ -1,0 +1,17 @@
+---
+title: Reference
+description: Map of where the canonical OpenProse specs live.
+---
+
+Canonical specs live in the `prose` repo. This site links to them.
+
+| Spec              | Canonical home                                                                                                                        | Summary                         |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| Language Spec     | [`prose/skills/open-prose/prose.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md)                         | VM execution semantics          |
+| Forme Spec        | [`prose/skills/open-prose/forme.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/forme.md)                         | Service-resolution rules        |
+| Contract Markdown | [`prose/skills/open-prose/contract-markdown.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/contract-markdown.md) | Program/service Markdown format |
+| ProseScript       | [`prose/skills/open-prose/prosescript.md`](https://github.com/openprose/prose/blob/main/skills/open-prose/prosescript.md)             | Imperative scripting layer      |
+
+Why we link out instead of mirroring: the prose repo is the source of truth for every load-bearing spec, and a mirror that drifts is worse than a link that does not. A drift guard (a Prose program that compares the hosted copy against the canonical file and fails the build on divergence) is on the roadmap but deferred until after v1. Until that ships, the safe move is to link. Treat anything on this site that contradicts the canonical spec as out of date; treat the canonical spec as authoritative.
+
+The two reference pages hosted on this site -- [Command Reference](./command-reference) and [Execution Model](./execution-model) -- exist for the questions that come up most often in practice and that benefit from a stable URL. They are terser than the canonical specs and link back to them at the end. For everything else, follow the table above.

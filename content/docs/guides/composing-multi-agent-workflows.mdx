@@ -1,0 +1,56 @@
+---
+title: Composing Multi-Agent Workflows
+description: Three flagship patterns from OpenProse guidance, distilled.
+---
+
+Three patterns recur across mature OpenProse programs: an arbiter, a fan-out-then-synthesize, and a research-then-summarize. Each addresses a different shape of work, and each has a canonical example in the standard library.
+
+## Captain's Chair (arbiter pattern)
+
+A captain delegates to specialists, then makes the final call. The captain is the only service with a complete picture; specialists each see one slice. The pattern fits when the work has genuinely different kinds of expertise (research, implementation, review, testing) and you want a single, accountable judgment at the end rather than a merged summary.
+
+<ProseProgram
+  src="vendor/prose-examples/29-captains-chair/index.md"
+  title="captains-chair/index.md"
+/>
+
+The topology has the captain at the top of three phases. Phase 1 is strategic planning. Phase 2 fans out to three researchers, each with a different focus. Phase 3 synthesizes their findings into an implementation plan, runs it past a critic, and iterates if the critic raises critical concerns. Phase 4 hands the plan to a coder and runs another critic pass on the code. Phase 5 invokes a tester. Phase 6 is the captain again, producing the final summary. The pinned `### Execution` block makes the order explicit because the iteration shape (critic conditional revisions) cannot be inferred from the dependency graph.
+
+## Parallel Reviews (fan-out-then-synthesize)
+
+Three specialists review the same artifact through different lenses, and a synthesizer merges their findings. The pattern fits when the perspectives are independent (security versus performance versus style), the reviews must not influence each other, and the output is a consolidated report rather than a single verdict.
+
+<ProseProgram
+  src="vendor/prose-examples/16-parallel-reviews/index.md"
+  title="parallel-reviews/index.md"
+/>
+
+The topology is flatter than Captain's Chair. There is no arbiter; there is a synthesizer. The three reviewers depend only on the caller's `code` input, so Forme places them in parallel. The synthesizer depends on all three reviewers' outputs, so Forme runs it last. The synthesizer's job is presentation -- group findings, deduplicate where the lenses overlap, prioritize by severity. It does not adjudicate; the reviewers' findings stand. This is the cheaper pattern when you do not need a final verdict.
+
+## Research-and-Summarize (sequential pipeline)
+
+A research sweep followed by a summarization, with retry hooks for low-confidence outcomes. The pattern fits when the input is open-ended (a topic, a question), the work is linear (gather, then condense), and quality depends on broadening the search when initial results are thin.
+
+<ProseProgram
+  src="vendor/prose-examples/02-research-and-summarize.md"
+  title="research-and-summarize.md"
+/>
+
+The topology is a single service. There is no parallelism, no arbiter, no synthesizer. The leverage comes from the contract: `### Ensures` requires `each bullet point` to be grounded in a specific source from the past 6 months, and `### Strategies` declares the retry shape ("when few sources found: broaden search terms"; "when findings are too technical: translate to practical implications"). The retry happens inside the service's session, guided by the strategy clauses, not via a control-flow loop in the program.
+
+## Choosing between them
+
+A short rubric for when to reach for which pattern.
+
+- **Need a final verdict?** Captain's Chair. The captain is the named owner of the decision and the run produces a single accountable output.
+- **Need consolidated findings?** Parallel Reviews. No arbiter, lower coordination cost, and the synthesizer's job is straightforward merging.
+- **Need a research sweep with retries?** Research-and-Summarize. A single service with strategy hints is cheaper than a multi-service program when the work is genuinely linear.
+- **Need branching after a check?** Reach for [Choice blocks](https://github.com/openprose/prose/blob/main/skills/open-prose/examples/24-choice-blocks.md) in a pinned `### Execution` block. The patterns above all assume a fixed topology; choice blocks let you pick a downstream branch based on an intermediate result.
+
+A note on cost: parallel patterns multiply LLM calls but compress wall-clock time. The arbiter pattern adds round-trips for delegation and review. The pipeline pattern is the cheapest when the work fits its shape. Match the pattern to the actual structure of the work, not the largest one you can afford.
+
+## Read more
+
+- [Concepts: Services and Programs](../concepts/services-and-programs) -- the difference between the two units and how they compose.
+- [Concepts: Forme](../concepts/forme) -- how the wiring layer turns a list of services into a runnable graph.
+- [patterns.md on GitHub](https://github.com/openprose/prose/blob/main/skills/open-prose/guidance/patterns.md) -- the canonical patterns catalog with structural, robustness, cost, and observability sections.
