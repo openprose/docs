@@ -1,0 +1,47 @@
+{
+  "name": "@openprose/docs",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "description": "Documentation site for OpenProse, the programming language for AI sessions.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openprose/docs.git"
+  },
+  "homepage": "https://docs.openprose.ai",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "postinstall": "fumadocs-mdx",
+    "prebuild": "echo \"prebuild placeholder; will run prose programs in Chunk 4\"",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
+    "lint": "eslint .",
+    "spell": "cspell \"content/**/*.mdx\" \"README.md\"",
+    "check": "pnpm typecheck && pnpm lint && pnpm spell",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fumadocs-core": "16.8.5",
+    "fumadocs-mdx": "14.3.2",
+    "fumadocs-ui": "16.8.5",
+    "lucide-react": "^1.11.0",
+    "next": "16.2.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^4.2.4",
+    "typescript": "^6.0.3",
+    "eslint-config-next": "16.2.4",
+    "eslint": "^10.2.1"
+  }
+}
