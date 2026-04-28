@@ -1,0 +1,28 @@
+---
+title: For AI Agents
+description: How agents and LLM clients can consume OpenProse documentation.
+---
+
+This site exposes parallel agent-readable surfaces alongside the human-navigable HTML. If you are an LLM client, a coding assistant, or a script feeding docs into a context window, prefer these endpoints over scraping the rendered pages.
+
+## Available endpoints
+
+| Surface                                | Path                                      | Format           |
+| -------------------------------------- | ----------------------------------------- | ---------------- |
+| Curated index                          | `/llms.txt`                               | text/plain       |
+| Full corpus                            | `/llms-full.txt`                          | text/plain       |
+| Per-page markdown (Accept negotiation) | `<page-url>` with `Accept: text/markdown` | text/markdown    |
+| Per-page markdown (URL suffix)         | `<page-url>.mdx`                          | text/markdown    |
+| Agent skills manifest                  | `/.well-known/agent-skills/index.json`    | application/json |
+| Search API                             | `/api/search?q=...`                       | application/json |
+| Search OpenAPI spec                    | `/api/search/openapi`                     | application/json |
+
+## Quick patterns
+
+1. **Hand a docs page to your assistant.** Click the Copy-as-markdown button in the View Options popover at the top of any docs page. The clipboard receives the page's markdown source (frontmatter included), ready to paste into a Claude or Codex session.
+2. **Index the whole corpus.** Fetch `/llms-full.txt` once. The body concatenates every page in stable order with page boundaries; reasonable to feed into a context window for a full-site RAG over docs.
+3. **Discover the search endpoint.** Fetch `/api/search/openapi` to learn the query shape, then call `/api/search?q=<term>`. Results conform to fumadocs-core's `SortedResult` shape: `{ id, url, type, content, breadcrumbs? }`.
+
+## Skill installation context
+
+If you are guiding a user through installing OpenProse on their runtime, see [Install](./install) for the per-runtime commands. The agent-skills manifest at `/.well-known/agent-skills/index.json` is the canonical machine-readable source for those commands; prefer it over hard-coding the install incantation in your prompt.

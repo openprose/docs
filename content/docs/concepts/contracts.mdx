@@ -1,0 +1,57 @@
+---
+title: Contracts
+description: Requires, Ensures, Strategies. The contract block is what makes a program a program.
+---
+
+An OpenProse contract is a typed function signature for an agent workflow. It declares what a service needs from its caller, what it commits to produce, and how to behave at the edges. That is the difference between a `.prose` file and a free-form prompt: a contract is testable, composable, and debuggable. A prompt is none of those things. The [contract-vs-prompt distinction](../get-started/why-openprose) goes deeper on the positioning; this page covers the section grammar.
+
+The canonical contract sections, recognized case-insensitively by Forme and the Prose VM, are `Requires`, `Ensures`, `Strategies`, `Errors`, and `Invariants`. There are a few more (`Description`, `Environment`, `Runtime`, `Shape`) but those five carry the contract.
+
+## Requires
+
+`### Requires` declares the inputs and dependencies the caller must provide. Each entry is a Markdown bullet with a backticked name, a colon, and a short description of what the value should look like. Forme reads these entries and matches each one against another service's `Ensures` (or against the program's own caller inputs).
+
+- `topic`: a research question to investigate
+- `code`: source code or directory to review
+- `subject`: run -- a completed run to inspect
+
+Types are usually implicit: `topic` is plainly a string, `code` is a path or a blob, a list is whatever the description says it is. Two keywords are reserved: `run` and `run[]`, which signal that the caller is passing in a completed run by ID. Everything else is free-form prose, and that is intentional. The contract describes the value, not its serialization.
+
+## Ensures
+
+`### Ensures` mirrors `Requires` for outputs. Each entry names something the service commits to produce and describes its shape.
+
+- `report`: a unified code review covering security, performance, and maintainability
+- each issue has: a severity rating (critical, high, medium, low) and actionable recommendation
+- `summary`: 5 bullet points covering key findings with practical implications for developers
+
+`Ensures` is what Forme matches against to wire downstream services, and what the runtime checks after a service completes. An `each` clause (`each issue has...`) signals a collection: downstream services consuming the output should expect many items, each satisfying the stated properties. A conditional clause (`if sources are unavailable: partial findings, flagged as stale`) declares a degraded-but-acceptable outcome.
+
+## Strategies
+
+`### Strategies` is advisory, not enforced. Strategies are hints to the executing agent for judgment calls and edge cases: what to prefer, what to fall back to, when to retry. The runtime does not check strategies the way it checks `Ensures` postconditions. They are guidance, not contract.
+
+Examples: "when reviewing large codebases: focus on files with recent changes first", "when few sources found: broaden search terms", "when many low-quality sources: prioritize academic and primary sources". A strategy reads like a `when X: do Y` clause, and that is the recommended shape. They are most useful for retry loops and quality gates, where the right behavior depends on what the agent is seeing in the moment.
+
+## Errors and Invariants
+
+`### Errors` declares the failure conditions a service may signal. Each entry names a specific error and the data that accompanies it. A service that signals `no-results` is telling the runtime "I terminated early because the precondition for useful work was not met"; downstream services and tests can pattern-match on the error name to decide how to recover. Errors are part of the contract, not an exceptional escape hatch.
+
+`### Invariants` declares properties that must hold regardless of outcome. "audit log is appended with this invocation's outcome" is an invariant: success or failure, the log gets written. Invariants are the right place for things you would otherwise put in a `finally` block: cleanup, logging, accounting. The runtime checks them after the run completes.
+
+## Putting it together
+
+Here is a single-service contract end to end. The highlighted lines are the contract surface: `Requires` and `Ensures`. Everything else is structure or guidance.
+
+<ProseProgram
+  src="vendor/prose-examples/03-code-review.md"
+  title="03-code-review.md"
+  highlightLines="6-14"
+/>
+
+The file has frontmatter for identity (`name`, `kind`), `Requires` for the one input, `Ensures` for the unified report and its per-issue shape, and `Strategies` for two judgment calls the reviewer might face. That is the whole contract. A program that wanted to use this service would just list `code-review` in its `### Services` block and supply a `code` input; Forme would handle the rest.
+
+## Read more
+
+- [Reference: Contract Markdown](../reference/contract-markdown) -- the full section grammar, header hierarchy, and frontmatter schema.
+- [contract-markdown.md on GitHub](https://github.com/openprose/prose/blob/main/skills/open-prose/contract-markdown.md) -- the canonical spec.

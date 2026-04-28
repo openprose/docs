@@ -1,0 +1,30 @@
+---
+title: The Intelligent VM
+description: A Markdown program is a contract; an agent is the runtime. Here is what that means.
+---
+
+OpenProse is to agents what Java is to JVMs: a portable contract any compatible runtime can execute. The language defines what a program looks like; the runtime is whichever agent harness reads the file, wires the dependencies, and runs the resulting graph.
+
+## Three load-bearing pieces
+
+The whole system rests on three artifacts. Each one has a separate spec, a separate failure mode, and a separate page in this section.
+
+- **Contract Markdown.** The program format. A `.md` file with YAML frontmatter for identity (`name`, `kind`) and `###` sections for the contract surface (`Requires`, `Ensures`, `Strategies`, etc.). This is what you write. See [Contracts](./contracts) for the section grammar and the [Contract Markdown spec](https://github.com/openprose/prose/blob/main/skills/open-prose/contract-markdown.md) for the full reference.
+- **Forme.** The wiring layer. Forme reads each component's `Requires` and `Ensures`, matches them by semantic understanding, and emits a manifest the runtime can execute. It is the dependency-injection container, except the resolver reads natural language instead of type signatures. See [Forme](./forme).
+- **The Prose VM.** The execution engine. It consumes Forme's manifest, spawns a subagent session per service, copies declared outputs from each service's workspace into shared bindings, and persists the whole trace to disk. See [Services and Programs](./services-and-programs) for how the units compose, and the [prose.md spec](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md) for the canonical execution semantics.
+
+## What "execution" means here
+
+Running an OpenProse program is a two-phase loop. First Forme reads the entry point, walks the `### Services` list, resolves each service file, and matches every service's `Requires` against another service's `Ensures` (or against the program's own caller inputs). The result is a topologically sorted manifest. Second, the Prose VM walks the manifest in order, spawning a fresh subagent for each service with that service's contract as its prompt boundary. Each agent writes to a private workspace; the runtime copies its declared `Ensures` outputs into shared bindings so downstream services can read them.
+
+The contract is what makes this tractable. Because every service commits to a typed surface up front, the runtime can check `Ensures` after the fact, surface violations, and pin failures to the specific clause that broke. The four-bullet breakdown from [Your First Program](../get-started/your-first-program) lives inside this loop: contract parsing, Forme wiring, agent execution per service, run trace persistence.
+
+## Run traces
+
+Every run produces a directory at `.prose/runs/<id>/`. It contains the manifest Forme produced, copies of every service file as it existed at wire time, the workspaces each subagent wrote to, the bindings that flowed between services, and an append-only `state.md` event log. The trace is the durable record. Terminal output is just a summary view of it. Diff two traces and you can see exactly which service call shape changed; replay one and you can resume from a failure. The deep dive on the on-disk format lives in the [Execution Model](../reference/execution-model) reference page.
+
+## Read more
+
+- [Reference: Language Spec](../reference/language-spec) -- the canonical section grammar and frontmatter schema.
+- [prose.md on GitHub](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md) -- the canonical VM execution spec.
+- [Concepts: Forme](./forme) -- how the wiring layer turns a list of services into a runnable graph.

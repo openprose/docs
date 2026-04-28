@@ -1,0 +1,43 @@
+---
+title: Why OpenProse?
+description: How OpenProse differs from CrewAI, Mastra, Letta, and prompt-only skills.
+---
+
+OpenProse fills the gap between ad-hoc prompts and heavyweight agent frameworks. You get a contract surface, contract enforcement, and an inspectable run trace without giving up the agent-native runtime you already have.
+
+## Compared to prompt-only skills
+
+A prompt-only skill (a CLAUDE.md, a SKILL.md, a system prompt) is a great way to bias a single response. It is a poor way to choreograph three or more steps with different expertise, because the structure lives in your head and gets re-derived every run. OpenProse promotes that structure into the file.
+
+- **No contract** versus a declared `Requires` / `Ensures` surface that callers can reason about.
+- **No contract enforcement** versus a runtime that checks ensures clauses and surfaces violations.
+- **No run trace** versus a persisted `.prose/runs/<id>/` directory you can diff, replay, and audit.
+
+## Compared to agent frameworks
+
+| Property                    | OpenProse                                    | CrewAI          | Mastra          | Letta           |
+| --------------------------- | -------------------------------------------- | --------------- | --------------- | --------------- |
+| Programs as code or config? | Markdown contracts, version-controlled       | Python code     | TypeScript code | see docs        |
+| Contract enforcement?       | Yes (Requires/Ensures checked at run time)   | see docs        | see docs        | see docs        |
+| Runtime independence?       | Any Prose Complete host (Claude Code, Codex) | Bundled runtime | Bundled runtime | Bundled runtime |
+| Language portability?       | Markdown plus YAML, no SDK                   | Python SDK      | TypeScript SDK  | Python SDK      |
+
+The shape of the difference: OpenProse is a language with a spec, and any sufficiently capable agent harness is a runtime for it. Frameworks ship a runtime and ask you to author programs in their host language.
+
+## When OpenProse is the right answer
+
+Reach for OpenProse when the task has any of these shapes:
+
+- **Three or more steps that want different expertise** (research, then synthesize, then review).
+- **A reuse signal** -- "every week," "each time a PR comes in," "before every release."
+- **A natural retry loop** -- draft / critique / revise, implement / test / fix.
+- **Parallel exploration with a synthesis step** -- "compare three approaches," "get second opinions."
+- **A "make sure X always happens" constraint** -- that is a contract asking to be written down.
+
+## When it is not
+
+- **One-shot Q&A.** A plain prompt is the right answer.
+- **Tasks where the user wants to iterate in real time.** A contract boundary adds friction.
+- **Anything you would finish in a single response.** The overhead of writing a contract exceeds the value of having one.
+
+If you recognize the workflow shape but are not sure whether to commit to a contract, the [Introduction](./introduction) and the [SKILL.md recognition signals](https://github.com/openprose/prose/blob/main/skills/open-prose/SKILL.md) on GitHub list the patterns to watch for.

@@ -1,0 +1,51 @@
+---
+title: Install
+description: Add the OpenProse skill to Claude Code, Codex, or another supported runtime.
+---
+
+The OpenProse skill teaches a host harness how to read Contract Markdown, wire services, and run them. Each runtime has its own skill-installation mechanism, so the install command differs per host.
+
+## Prerequisites
+
+- A Prose Complete runtime: [Claude Code](https://claude.ai/code), the Claude plugin, or [Codex](https://github.com/openai/codex). Each ships its own runtime baseline (Node, Bun, or native binary); the OpenProse skill runs inside whatever the host provides.
+- An [Anthropic API key](https://console.anthropic.com/) exported as `ANTHROPIC_API_KEY`.
+
+## Install per runtime
+
+Run the command for your runtime exactly once. The skill loads on the next session.
+
+### Claude Code
+
+```bash
+npx skills add openprose/prose
+```
+
+### Claude plugin
+
+```text
+/plugin install openprose/prose
+```
+
+### Codex
+
+```bash
+codex skills add openprose/prose
+```
+
+## Verify the install
+
+Save the [hello-world program](./your-first-program) as `hello-world.md` in your working directory, then ask your runtime to run it. `prose run` is an in-session instruction the OpenProse skill responds to, not a binary on `PATH`. So inside Claude Code you would type:
+
+```text
+prose run hello-world.md
+```
+
+at the Claude Code prompt; inside Codex you would do the same in a Codex session. A successful install activates the OpenProse skill on that command, parses the contract, and produces a `greeting` output along with a `.prose/runs/<id>/` trace directory. If the runtime answers the prompt directly without activating the skill, the skill is not installed in this host.
+
+## Updating
+
+Each runtime owns its own update path. For Claude Code and Codex, re-run the same install command -- both `npx skills add` and `codex skills add` upgrade in place. For the Claude plugin, run `/plugin update openprose/prose`. New skill versions are non-breaking by policy; if you pinned a version, bump it explicitly.
+
+## Next steps
+
+- [Your First Program](./your-first-program) -- run hello-world and walk through what the VM did.

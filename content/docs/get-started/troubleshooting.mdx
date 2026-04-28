@@ -1,0 +1,38 @@
+---
+title: Troubleshooting
+description: Common issues and fixes when running OpenProse programs.
+---
+
+Five common issues, with a cause and a fix for each.
+
+## The skill did not activate when I ran `prose run`
+
+**Cause:** The OpenProse skill is not installed in this host, or the host is a different runtime than the one you installed against. The runtime answers prompts directly when it has no skill registered for Contract Markdown.
+
+**Fix:** Re-run the install command for your runtime. See [Install](./install) for the per-runtime entry point. If the install command succeeded but the skill still does not activate, restart the runtime session so the skill registry reloads.
+
+## The contract parsed but Forme did not wire any services
+
+**Cause:** Either the entry-point file is missing `kind: program` and a `### Services` section, or the `Requires` and `Ensures` field names do not match across services. Forme wires by name equality on those fields, so a typo on either side leaves the graph disconnected.
+
+**Fix:** Confirm the entry file's frontmatter and check that every `Requires` field has a corresponding `Ensures` somewhere in the program. See [Concepts: Contracts](../concepts/contracts) for the contract surface and [Concepts: Forme](../concepts/forme) for the wiring rules.
+
+## I see the run trace but no output file was written
+
+**Cause:** The service ran to completion but its `### Ensures` did not declare a file output, or the agent produced the value in-memory and the runtime had nowhere to persist it. The trace records the call, but a contract that does not name a file artifact will not write one.
+
+**Fix:** Add the output file to `### Ensures` with an explicit path or pattern, then re-run. The trace at `.prose/runs/<id>/` will show the new artifact. See [Concepts: Contracts](../concepts/contracts) for the Ensures schema.
+
+## The CLI prints `ANTHROPIC_API_KEY is not set`
+
+**Cause:** The runtime cannot reach the Anthropic API without a credential. The OpenProse skill is currently distributed with an Anthropic-hosted default model, so even on non-Anthropic runtimes the key is required unless you explicitly override the model in the program's frontmatter.
+
+**Fix:** Export the key in your shell: `export ANTHROPIC_API_KEY=sk-ant-...`. Add it to your shell profile so future sessions inherit it. See the [Install](./install) prerequisites for where to obtain the key.
+
+## My `.prose` file uses ProseScript but the runtime treated it as Contract Markdown
+
+**Cause:** The two surfaces share a file extension family but have different parsing rules. Contract Markdown is the default; ProseScript needs a frontmatter signal so the runtime selects the right parser.
+
+**Fix:** Check the [ProseScript spec](https://github.com/openprose/prose/blob/main/skills/open-prose/prosescript.md) for the correct frontmatter signal and section conventions. If you intended Contract Markdown, the runtime's behavior is already correct and the issue is in the source document, not the parser.
+
+Hit something not on this list? File an issue at [openprose/docs](https://github.com/openprose/docs/issues/new).
