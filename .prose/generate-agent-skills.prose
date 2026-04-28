@@ -1,0 +1,83 @@
+---
+name: generate-agent-skills
+kind: program
+---
+
+# Compile the agent-skills manifest with real content digests
+
+The Chunk 3 manifest at `public/.well-known/agent-skills/index.json` shipped
+with placeholder sha256 values (sixty zeroes) and a frozen `generatedAt`
+timestamp. This program walks the on-disk SKILL.md files, computes a real
+sha256 of each, and rewrites the manifest with those digests plus a fresh
+ISO-8601 timestamp. Its job is to make the manifest honest before any
+production build leaves the repo.
+
+### Services
+
+- `skill_files`: enumerate all SKILL.md files under
+  `public/.well-known/agent-skills/` using the configured glob, returning
+  absolute paths in stable filesystem order
+- `hasher`: read a file's bytes and return its sha256 as a sixty-four
+  character lowercase hex string
+- `manifest_writer`: serialize the updated manifest object to JSON with
+  two-space indentation and a trailing newline, writing it back to
+  `manifest_path` atomically (write-temp-then-rename)
+
+### Requires
+
+- `repo_root`: absolute path to the prose-docs/ checkout
+- `manifest_path`: `<repo_root>/public/.well-known/agent-skills/index.json`
+- `skill_glob`: `<repo_root>/public/.well-known/agent-skills/**/SKILL.md`
+- `canonical_base_url`: `https://docs.openprose.ai`
+
+### Ensures
+
+- `manifest_emitted`: `manifest_path` exists on disk after the run and
+  validates against the sibling `schema.json`
+- `digests_real`: every `skills[].sha256` is the actual sha256 of the
+  corresponding SKILL.md file. No zero-padded placeholder is allowed to
+  survive this run.
+- `generatedAt_fresh`: `generatedAt` is the ISO-8601 timestamp of this
+  run, in UTC, with millisecond precision (for example
+  `2026-04-28T16:42:07.123Z`). Millisecond precision matches the format
+  Chunk 3's stub used and what the agentskills.io v0.2.0 catalog
+  convention emits.
+- `skill_count_matches`: the number of `skills[]` entries equals the
+  number of SKILL.md files returned by `skill_files`
+- `canonical_urls`: every `skills[].url` begins with `canonical_base_url`,
+  never the fly.dev preview hostname (regression guard against accidentally
+  publishing the preview origin in a public manifest)
+
+### Strategies
+
+- preserve the existing `skills[]` order on rewrite. Do not re-sort. PR
+  diffs across runs should show only sha256 and `generatedAt` churn so
+  reviewers can spot real changes.
+- if `skill_files` returns zero paths, fail loudly. An empty manifest is
+  never the correct answer and almost always indicates a misconfigured
+  glob or a broken checkout.
+- map each SKILL.md path to its `skills[]` entry by URL derivation: the
+  file `public/.well-known/agent-skills/<slug>/SKILL.md` corresponds to
+  the URL `${canonical_base_url}/.well-known/agent-skills/<slug>/SKILL.md`.
+- if a SKILL.md exists on disk but no `skills[]` entry references it,
+  fail with a clear `missing manifest entry for <path>` error so the
+  author knows to add the entry before retrying
+- if a `skills[]` entry's URL points to a file that does not exist on
+  disk, fail with a clear `missing SKILL.md for <url>` error so the
+  author knows to either add the file or remove the stale entry
+
+### Execution
+
+1. Call `skill_files.list(skill_glob)` to enumerate SKILL.md paths.
+2. For each path, call `hasher.sha256(path)` to compute the digest.
+3. Read the existing manifest from `manifest_path` and parse it as JSON.
+4. Verify that the count of `skills[]` entries equals the count of paths
+   from step 1. Fail loudly on mismatch, naming both numbers in the error.
+5. For each `skills[]` entry, derive the expected on-disk path from its
+   `url` and `canonical_base_url`. Look up the matching digest from step 2
+   and assign it to `sha256`.
+6. Set `generatedAt` to the current UTC time, formatted as ISO-8601 with
+   millisecond precision and the `Z` suffix (matching `generatedAt_fresh`).
+7. Call `manifest_writer.write(manifest_path, updated_manifest)`.
+8. Print `[generate-agent-skills] wrote <N> digests to <manifest_path>`
+   so CI logs make the run legible at a glance.

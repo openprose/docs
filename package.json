@@ -12,7 +12,7 @@
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "postinstall": "fumadocs-mdx",
-    "prebuild": "echo \"prebuild placeholder; will run prose programs in Chunk 4\"",
+    "prebuild": "claude -p 'prose run .prose/generate-agent-skills.prose && prose run .prose/changelog-sync.prose'",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
