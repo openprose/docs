@@ -23,6 +23,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@shikijs/transformers": "^4.0.2",
     "fumadocs-core": "16.8.5",
     "fumadocs-mdx": "14.3.2",
     "fumadocs-ui": "16.8.5",
@@ -30,6 +31,7 @@
     "next": "16.2.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
+    "shiki": "^4.0.2",
     "tailwind-merge": "^3.5.0"
   },
   "devDependencies": {
