@@ -36,6 +36,7 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.4",
+    "@types/glob": "^9.0.0",
     "@types/mdx": "^2.0.13",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
@@ -45,6 +46,7 @@
     "ajv-formats": "^3.0.1",
     "eslint": "^10.2.1",
     "eslint-config-next": "16.2.4",
+    "glob": "^13.0.6",
     "happy-dom": "^20.9.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.2.4",
