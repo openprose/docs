@@ -7,13 +7,13 @@ Five programs, picked to demonstrate the language's range. Each example page nar
 
 The five featured here span beginner-to-advanced and align with the three flagship patterns covered in [Composing Multi-Agent Workflows](../guides/composing-multi-agent-workflows). Use the table to pick the one that matches the shape of work you have in mind.
 
-| Example                | Difficulty   | Pattern                                       |
-| ---------------------- | ------------ | --------------------------------------------- |
-| Hello World            | Beginner     | Single-service, single output                 |
-| Research and Summarize | Beginner     | Sequential pipeline (research-then-summarize) |
-| Code Review            | Intermediate | Single-service with structured Ensures        |
-| Captain's Chair        | Advanced     | Multi-agent with arbiter                      |
-| Parallel Reviews       | Advanced     | Fan-out then synthesize                       |
+| Example                | Difficulty   | Pattern                                |
+| ---------------------- | ------------ | -------------------------------------- |
+| Hello World            | Beginner     | Smallest runnable program              |
+| Research-and-Summarize | Beginner     | Single-service with retry strategies   |
+| Code Review            | Intermediate | Single-service with structured Ensures |
+| Captain's Chair        | Advanced     | Multi-agent with arbiter               |
+| Parallel Reviews       | Advanced     | Fan-out then synthesize                |
 
 Hello World and Research-and-Summarize are the right starting points: both are single files with no service composition. Code Review introduces a richer `### Ensures` shape (per-issue severity and recommendations) without adding services. Parallel Reviews and Captain's Chair are the multi-service cases -- the first runs three reviewers in parallel and merges, the second adds an arbiter that owns the final call.
 
