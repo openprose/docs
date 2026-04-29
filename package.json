@@ -20,6 +20,7 @@
     "lint": "eslint .",
     "spell": "cspell --no-progress --no-summary 'content/**/*.{md,mdx}' '*.md' 'README.md'",
     "check": "pnpm typecheck && pnpm lint && pnpm spell",
+    "pretest": "fumadocs-mdx",
     "test": "vitest run",
     "check:emdash": "scripts/check-em-dash-in-content.sh",
     "check:links": "tsx scripts/check-links.ts"
