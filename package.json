@@ -18,9 +18,11 @@
     "start": "next start",
     "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
     "lint": "eslint .",
-    "spell": "cspell \"content/**/*.mdx\" \"README.md\"",
+    "spell": "cspell --no-progress --no-summary 'content/**/*.{md,mdx}' '*.md' 'README.md'",
     "check": "pnpm typecheck && pnpm lint && pnpm spell",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check:emdash": "scripts/check-em-dash-in-content.sh",
+    "check:links": "tsx scripts/check-links.ts"
   },
   "dependencies": {
     "@shikijs/transformers": "^4.0.2",
@@ -44,12 +46,14 @@
     "@vitest/ui": "^4.1.5",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "cspell": "^10.0.0",
     "eslint": "^10.2.1",
     "eslint-config-next": "16.2.4",
     "glob": "^13.0.6",
     "happy-dom": "^20.9.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.5"
   }
