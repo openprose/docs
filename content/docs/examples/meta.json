@@ -1,0 +1,11 @@
+{
+  "title": "Examples",
+  "pages": [
+    "overview",
+    "hello-world",
+    "research-and-summarize",
+    "code-review",
+    "captains-chair",
+    "parallel-reviews"
+  ]
+}

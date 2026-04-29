@@ -1,0 +1,35 @@
+---
+title: Captain's Chair
+description: A multi-agent program where a captain delegates to specialists, then makes the final call.
+---
+
+The arbiter pattern made concrete. A captain owns the strategic plan and the final summary; researchers, a coder, a critic, and a tester each see one slice of the work. The pinned `### Execution` block makes the iteration shape explicit because the conditional revision loops cannot be inferred from the dependency graph alone.
+
+<ProseProgram
+  src="vendor/prose-examples/29-captains-chair/index.md"
+  title="captains-chair/index.md"
+  copy
+/>
+
+<Callout type="info">
+  Only the entrypoint `index.md` is vendored locally. The supporting service
+  files (`captain.md`, `researcher.md`, `coder.md`, `critic.md`, `tester.md`)
+  live alongside it in the canonical examples directory: [openprose/prose:
+  29-captains-chair](https://github.com/openprose/prose/tree/main/skills/open-prose/examples/29-captains-chair).
+</Callout>
+
+## What this shows
+
+- The frontmatter declares `kind: program` and the `### Services` list names five distinct service files. Forme loads each one and matches their Requires/Ensures fields against the program's wiring.
+- `### Requires` and `### Ensures` describe the program's outer contract: in (`task`, `codebase-context`), out (`result`). The internal data flow between captain, researchers, coder, critic, and tester lives entirely in the Execution block.
+- The `### Execution` block is pinned because the program needs control flow Forme cannot infer: three parallel researcher calls, two `if ... has critical concerns` revision loops, and a final captain pass that depends on the prior phases. Without the pinned block, Forme would lose the iteration shape.
+- The topology has the captain at three points (planning, synthesis, final summary), reviewers as intermediates, and the critic firing twice as a quality gate. This is the structural signature of an arbiter pattern.
+
+## Try it yourself
+
+Clone the [examples directory](https://github.com/openprose/prose/tree/main/skills/open-prose/examples/29-captains-chair) so you have all six files locally, then run `prose run index.md task:"add rate limiting to the API" codebase-context:"NestJS API in apps/api"`. See [Get Started: Your First Program](../get-started/your-first-program) for runtime setup. Try removing the second critic pass (the post-implementation one) and watch the trace -- the program runs faster, but the captain's final summary now lacks the code-review evidence the original contract assumed.
+
+## Where to next
+
+- [Parallel Reviews](./parallel-reviews) -- the cheaper sibling pattern, no arbiter, no iteration loops.
+- [Composing Multi-Agent Workflows: Captain's Chair](../guides/composing-multi-agent-workflows#captains-chair-arbiter-pattern) -- the pattern walkthrough.

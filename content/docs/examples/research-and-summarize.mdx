@@ -1,0 +1,28 @@
+---
+title: Research-and-Summarize
+description: A single-service program with retry strategies for confidence-based broadening.
+---
+
+A research sweep followed by a tight summary, with strategy hints that tell the agent what to do when initial results are thin or too technical. Still one service, but the contract now carries enough structure to shape the agent's behavior across multiple attempts inside its own session.
+
+<ProseProgram
+  src="vendor/prose-examples/02-research-and-summarize.md"
+  title="02-research-and-summarize.md"
+  copy
+/>
+
+## What this shows
+
+- `### Requires` declares a single `topic` input with a default value, which means the program is runnable even when the caller passes nothing.
+- `### Ensures` carries two clauses: the shape of `summary` (5 bullets, key findings, practical implications) and a constraint that each bullet be grounded in a specific recent source. The runtime checks both.
+- `### Strategies` declares two retry hooks: broaden the search when sources are scarce, and translate to developer implications when findings get too technical. The agent is expected to consult these mid-session, not the program control flow.
+- The topology is a single leaf service. The leverage here is contractual, not structural -- the same shape as Hello World, but with the contract doing more of the work.
+
+## Try it yourself
+
+Save the file as `research-and-summarize.md` and run `prose run research-and-summarize.md` to use the default topic, or pass `topic:"your question"` to override it. See [Get Started: Your First Program](../get-started/your-first-program) for runtime setup. Try removing the `### Strategies` block and re-running on a niche topic; you should see the agent give up earlier when the first sweep returns thin results.
+
+## Where to next
+
+- [Code Review](./code-review) -- still single-service, but with a richly structured Ensures field.
+- [Composing Multi-Agent Workflows: Research-and-Summarize](../guides/composing-multi-agent-workflows#research-and-summarize-sequential-pipeline) -- the pattern walkthrough.

@@ -1,0 +1,28 @@
+---
+title: Code Review
+description: A single-service program with a richly structured Ensures field for per-issue severity.
+---
+
+A code reviewer that produces a unified report across security, performance, and maintainability. Still one service, but `### Ensures` now constrains the shape of each issue (severity tier and recommendation) and how the issues are ordered. This is the example to study when you want to see how much structure a contract can carry without growing into a multi-service program.
+
+<ProseProgram
+  src="vendor/prose-examples/03-code-review.md"
+  title="03-code-review.md"
+  copy
+/>
+
+## What this shows
+
+- `### Requires` takes a single `code` input -- either source or a directory path. The contract does not care which; the agent decides how to walk it.
+- `### Ensures` has three layered clauses: the top-level `report` shape, a per-issue structure (severity rating from a four-value enum plus an actionable recommendation), and a global ordering constraint (prioritized by severity). The runtime evaluates each clause against the output.
+- `### Strategies` declares two scaling hooks: focus on recently-changed files in large codebases, and group-and-highlight when the issue list grows long. These shape what the agent does when the input is bigger than a single small file.
+- The topology stays a single leaf service. The structured ensures is doing the work that a multi-service decomposition might otherwise do.
+
+## Try it yourself
+
+Save the file as `code-review.md` and run `prose run code-review.md code:"./path/to/your/code"`. See [Get Started: Your First Program](../get-started/your-first-program) for runtime setup. Try tightening the severity enum to three tiers (drop `low`) and re-running -- the trace should show the agent re-mapping issues into the narrower set.
+
+## Where to next
+
+- [Captain's Chair](./captains-chair) -- where review becomes one phase among many in a multi-agent program.
+- [Concepts: Contracts](../concepts/contracts) -- how Ensures clauses compose.

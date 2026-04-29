@@ -1,0 +1,28 @@
+---
+title: Hello World
+description: The smallest OpenProse program -- a single service with one Ensures field.
+---
+
+The smallest runnable OpenProse program. One service, no inputs, one output. Read this first to see the contract surface stripped to its essentials before any of the larger examples bring in strategies, structured ensures, or service composition.
+
+<ProseProgram
+  src="vendor/prose-examples/01-hello-world.md"
+  title="01-hello-world.md"
+  copy
+/>
+
+## What this shows
+
+- The frontmatter declares `kind: service`, which marks this file as a single-service contract rather than a program with a `### Services` list.
+- `### Requires` is intentionally empty: the service takes no inputs, so Forme has nothing to wire and the service runs as a leaf in the graph.
+- `### Ensures` has a single field, `greeting`, described in plain prose. The runtime checks the agent's output against this clause; the field is the contract's entire surface.
+- There is no `### Strategies` or `### Execution` block. With one service and no inputs, the topology is trivial and there is no retry shape to declare.
+
+## Try it yourself
+
+Save the file as `hello-world.md` and run `prose run hello-world.md`. See [Get Started: Your First Program](../get-started/your-first-program) for runtime setup if `prose` is not on your `PATH`. As a small variation, add a `tone` field to `### Requires` (e.g., "formal" or "playful") and watch the agent reflect it in `greeting`. The trace at `.prose/runs/<id>/` records the new input alongside the output.
+
+## Where to next
+
+- [Research-and-Summarize](./research-and-summarize) -- the same single-service shape, plus retry strategies.
+- [Concepts: Contracts](../concepts/contracts) -- Requires, Ensures, and Strategies in depth.
