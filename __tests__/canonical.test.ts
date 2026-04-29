@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   buildPageMetadata,
   canonicalUrl,
@@ -25,34 +25,18 @@ describe("canonicalUrl", () => {
 });
 
 describe("robotsContent", () => {
-  const original = process.env.DOCS_PREVIEW_MODE;
-  beforeEach(() => {
-    process.env.DOCS_PREVIEW_MODE = original;
-  });
-  afterEach(() => {
-    process.env.DOCS_PREVIEW_MODE = original;
-  });
-
   it("returns noindex,nofollow when preview mode is on", () => {
-    process.env.DOCS_PREVIEW_MODE = "true";
+    vi.stubEnv("DOCS_PREVIEW_MODE", "true");
     expect(robotsContent()).toBe("noindex,nofollow");
   });
 
   it("returns null when preview mode is off (no robots meta emitted)", () => {
-    process.env.DOCS_PREVIEW_MODE = "false";
+    vi.stubEnv("DOCS_PREVIEW_MODE", "false");
     expect(robotsContent()).toBeNull();
   });
 });
 
 describe("buildPageMetadata", () => {
-  const original = process.env.DOCS_PREVIEW_MODE;
-  beforeEach(() => {
-    process.env.DOCS_PREVIEW_MODE = original;
-  });
-  afterEach(() => {
-    process.env.DOCS_PREVIEW_MODE = original;
-  });
-
   it("emits absolute canonical URL for a nested docs path", () => {
     const md = buildPageMetadata("/docs/get-started/install");
     expect(md.alternates?.canonical).toBe(
@@ -73,13 +57,13 @@ describe("buildPageMetadata", () => {
   });
 
   it("sets robots index/follow false in preview mode", () => {
-    process.env.DOCS_PREVIEW_MODE = "true";
+    vi.stubEnv("DOCS_PREVIEW_MODE", "true");
     const md = buildPageMetadata("/docs/foo");
     expect(md.robots).toEqual({ index: false, follow: false });
   });
 
   it("sets robots index/follow true when preview mode is off", () => {
-    process.env.DOCS_PREVIEW_MODE = "false";
+    vi.stubEnv("DOCS_PREVIEW_MODE", "false");
     const md = buildPageMetadata("/docs/foo");
     expect(md.robots).toEqual({ index: true, follow: true });
   });

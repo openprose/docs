@@ -1,5 +1,5 @@
 #!/usr/bin/env tsx
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { globSync } from "glob";
 
@@ -50,12 +50,7 @@ function checkInternal(href: string, refFile: string): string | null {
   }
   // Try <basePath>.mdx, then <basePath>/index.mdx (for index-style pages)
   const candidates = [`${basePath}.mdx`, resolve(basePath, "index.mdx")];
-  for (const c of candidates) {
-    try {
-      readFileSync(c);
-      return null;
-    } catch {}
-  }
+  if (candidates.some((c) => existsSync(c))) return null;
   return `Internal link not found: ${href} (tried ${candidates.join(", ")})`;
 }
 

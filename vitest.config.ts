@@ -22,5 +22,6 @@ export default defineConfig(async () => ({
     environment: "happy-dom",
     include: ["__tests__/**/*.test.ts", "__tests__/**/*.test.tsx"],
     globals: false,
+    unstubEnvs: true,
   },
 }));
