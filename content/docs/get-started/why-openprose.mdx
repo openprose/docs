@@ -1,28 +1,39 @@
 ---
 title: Why OpenProse?
-description: How OpenProse differs from CrewAI, Mastra, Letta, and prompt-only skills.
+description: The contracts-first approach, inspectable run traces, and runtime portability that make programs testable and debuggable.
 ---
 
 OpenProse fills the gap between ad-hoc prompts and heavyweight agent frameworks. You get a contract surface, contract enforcement, and an inspectable run trace without giving up the agent-native runtime you already have.
 
-## Compared to prompt-only skills
+## Contracts as code
 
-A prompt-only skill (a CLAUDE.md, a SKILL.md, a system prompt) is a great way to bias a single response. It is a poor way to choreograph three or more steps with different expertise, because the structure lives in your head and gets re-derived every run. OpenProse promotes that structure into the file.
+A prompt is an instruction. A contract is a declaration. OpenProse programs declare what they `Require`, what they `Ensure`, what `Strategies` handle retries, and what `Errors` are expected. That surface is version-controlled, diffable, and readable by both humans and the runtime.
 
-- **No contract** versus a declared `Requires` / `Ensures` surface that callers can reason about.
-- **No contract enforcement** versus a runtime that checks ensures clauses and surfaces violations.
-- **No run trace** versus a persisted `.prose/runs/<id>/` directory you can diff, replay, and audit.
+The difference shows up immediately in multi-step work: the structure of your workflow lives in the file, not in your head. When the contract changes, the diff tells you exactly what changed and why.
 
-## Compared to agent frameworks
+## Inspectable run traces
 
-| Property                    | OpenProse                                    | CrewAI          | Mastra          | Letta           |
-| --------------------------- | -------------------------------------------- | --------------- | --------------- | --------------- |
-| Programs as code or config? | Markdown contracts, version-controlled       | Python code     | TypeScript code | see docs        |
-| Contract enforcement?       | Yes (Requires/Ensures checked at run time)   | see docs        | see docs        | see docs        |
-| Runtime independence?       | Any Prose Complete host (Claude Code, Codex) | Bundled runtime | Bundled runtime | Bundled runtime |
-| Language portability?       | Markdown plus YAML, no SDK                   | Python SDK      | TypeScript SDK  | Python SDK      |
+Every execution writes a structured trace to `.prose/runs/<id>/`. You can diff two runs to see what changed, replay a run against a patched service, or audit exactly which agent received which input. There is no black box -- the trace is the record.
 
-The shape of the difference: OpenProse is a language with a spec, and any sufficiently capable agent harness is a runtime for it. Frameworks ship a runtime and ask you to author programs in their host language.
+This makes debugging a workflow the same as debugging any other program: find the step that produced the wrong output, read its inputs and outputs, fix the contract or the strategy.
+
+## Portable across runtimes
+
+OpenProse is a language with a spec. The programs are Markdown and YAML -- no SDK, no host language, no bundled runtime. Any sufficiently capable agent harness that implements the Prose Complete protocol can execute a `.prose` program. The same file runs on Claude Code today and any other compliant runtime tomorrow.
+
+You own the programs. The runtime is pluggable.
+
+## Programs that compose
+
+Forme wires services together by matching what each service `Requires` against what another `Ensures`. You author services independently; the runtime resolves the dependency graph and executes it in topological order. Programs are not monoliths -- they are graphs of typed, testable units.
+
+This means you can swap one service without touching the rest, run services in parallel where the graph allows it, and reuse services across programs without copying and pasting prompts.
+
+## Self-hosting evidence
+
+The `openprose/docs` site itself is built and maintained by prose programs. Three programs ship alongside this documentation: one that checks internal links, one that lints content, and one that syncs examples from the prose monorepo. If something in the tooling breaks, the run trace shows it.
+
+That is the practical test of the language: does it hold up when you use it on itself?
 
 ## When OpenProse is the right answer
 
