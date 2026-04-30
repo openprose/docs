@@ -19,7 +19,7 @@ export function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleClick}
-      className="text-xs px-2 py-0.5 rounded border border-fd-border hover:bg-fd-accent"
+      className="font-mono text-[11px] uppercase tracking-[0.08em] px-2.5 py-1 rounded border border-fd-border text-fd-muted-foreground hover:text-fd-accent-foreground hover:border-fd-accent-foreground transition-colors"
       aria-label="Copy program source"
     >
       {copied ? "Copied" : "Copy"}

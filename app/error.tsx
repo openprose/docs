@@ -15,16 +15,18 @@ export default function GlobalError({
   }, [error]);
 
   return (
-    <main className="mx-auto max-w-prose py-16 text-center">
-      <h1 className="text-2xl font-semibold mb-4">Something went wrong</h1>
-      <p className="mb-6 text-fd-muted-foreground">
+    <main className="mx-auto max-w-prose py-20 text-center">
+      <h1 className="text-3xl font-medium mb-4 tracking-tight">
+        Something went wrong
+      </h1>
+      <p className="mb-8 text-fd-muted-foreground leading-relaxed">
         The error has been reported. You can try again, or head back to the
         docs.
       </p>
       <button
         type="button"
         onClick={reset}
-        className="px-4 py-2 rounded border border-fd-border hover:bg-fd-muted"
+        className="font-mono text-xs uppercase tracking-[0.08em] px-4 py-2.5 rounded border border-fd-border text-fd-foreground hover:border-fd-accent-foreground hover:text-fd-accent-foreground transition-colors"
       >
         Try again
       </button>

@@ -1,6 +1,65 @@
-@import 'tailwindcss';
-@import 'fumadocs-ui/css/neutral.css';
-@import 'fumadocs-ui/css/preset.css';
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* ============================================
+   OPENPROSE DOCS - DESIGN SYSTEM
+   Mirrors platform/apps/run "warm manuscript" aesthetic.
+   Light-only: dark mode disabled in app/layout.tsx via RootProvider.
+   ============================================ */
+
+:root {
+  /* Paper palette -- warm, tactile background tones */
+  --paper-cream: #faf7f2;
+  --paper-warm: #f5f0e6;
+  --paper-aged: #ede6d6;
+  --paper-shadow: #e8dfd0;
+
+  /* Ink palette -- text + iconography */
+  --ink-dark: #1c1917;
+  --ink-medium: #44403c;
+  --ink-light: #78716c;
+  --ink-faded: #a8a29e;
+
+  /* Accent -- Gilt Bronze (austere-institutional, Gilded Age register).
+     Reserved for focus rings, link hovers, and one-word emphasis.
+     Primary CTAs stay ink-dark; accent is never used to fill buttons. */
+  --accent-primary: #8a6b2e;
+  --accent-soft: #a88848;
+  --accent-bg: rgba(138, 107, 46, 0.1);
+
+  /* Code editor -- Solarized Light, matches Shiki's solarized-light theme */
+  --code-bg: #fdf6e3;
+  --code-text: #657b83;
+
+  /* Override Fumadocs UI variables (--color-fd-*) so all docs chrome --
+     header, sidebar, callouts, search, copy buttons, "View as md" --
+     inherits the OpenProse palette without per-component restyling. */
+  --color-fd-background: var(--paper-cream);
+  --color-fd-foreground: var(--ink-dark);
+  --color-fd-card: var(--paper-warm);
+  --color-fd-card-foreground: var(--ink-dark);
+  --color-fd-popover: var(--paper-cream);
+  --color-fd-popover-foreground: var(--ink-dark);
+  --color-fd-primary: var(--ink-dark);
+  --color-fd-primary-foreground: var(--paper-cream);
+  --color-fd-secondary: var(--paper-aged);
+  --color-fd-secondary-foreground: var(--ink-dark);
+  --color-fd-muted: var(--paper-warm);
+  --color-fd-muted-foreground: var(--ink-light);
+  --color-fd-accent: var(--accent-bg);
+  --color-fd-accent-foreground: var(--accent-primary);
+  --color-fd-border: var(--paper-aged);
+  --color-fd-input: var(--paper-aged);
+  --color-fd-ring: var(--accent-primary);
+}
+
+@theme inline {
+  /* Make Tailwind's font-sans and font-mono utilities resolve to OpenProse
+     fonts (loaded via next/font in app/layout.tsx). */
+  --font-sans: var(--font-prose), Georgia, serif;
+  --font-mono: var(--font-code), "SF Mono", Consolas, monospace;
+}
 
 html {
   scrollbar-gutter: stable;
@@ -9,4 +68,59 @@ html {
 html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
+}
+
+body {
+  background: var(--paper-cream);
+  color: var(--ink-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Headlines: balanced wrap, restrained weight (500 max, never bold).
+   Matches platform's "calm typography" rule -- bold weights would feel
+   alien against Literata's editorial register. */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  text-wrap: balance;
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+
+/* Selection: gilt-bronze tint, dark text */
+::selection {
+  background: var(--accent-soft);
+  color: var(--ink-dark);
+}
+
+/* Scrollbar: subtle, paper-warm track */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--paper-warm);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--ink-faded);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-light);
+}
+
+/* Code blocks rendered by Shiki (solarized-light theme) inherit a paper
+   background. Soften the default border treatment so they sit naturally
+   against paper-cream rather than appearing as inset chrome. */
+pre {
+  background: var(--code-bg) !important;
+  border: 1px solid var(--paper-aged);
+  border-radius: 8px;
 }
