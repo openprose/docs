@@ -12,7 +12,7 @@ export async function highlightProse(
   const meta = options.highlightLines ? `{${options.highlightLines}}` : "";
   return codeToHtml(code, {
     lang: "markdown",
-    themes: { light: "solarized-light", dark: "solarized-light" },
+    themes: { light: "solarized-dark", dark: "solarized-dark" },
     meta: { __raw: meta },
     transformers: [transformerMetaHighlight()],
   });

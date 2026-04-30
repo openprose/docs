@@ -1,11 +1,4 @@
 {
   "title": "OpenProse",
-  "pages": [
-    "index",
-    "get-started",
-    "concepts",
-    "guides",
-    "reference",
-    "examples"
-  ]
+  "pages": ["index", "start", "think", "use", "agents", "reference"]
 }

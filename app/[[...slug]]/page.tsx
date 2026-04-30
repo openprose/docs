@@ -24,7 +24,9 @@ export default async function Page(props: PageProps<"/[[...slug]]">) {
 
   return (
     <DocsPage toc={page.data.toc} full={page.data.full}>
-      <DocsTitle>{page.data.title}</DocsTitle>
+      <DocsTitle>
+        <BrandedTitle title={page.data.title} />
+      </DocsTitle>
       <DocsDescription className="mb-0">
         {page.data.description}
       </DocsDescription>
@@ -44,6 +46,27 @@ export default async function Page(props: PageProps<"/[[...slug]]">) {
         />
       </DocsBody>
     </DocsPage>
+  );
+}
+
+function BrandedTitle({ title }: { title: string }) {
+  const brand = "OpenProse";
+  const index = title.indexOf(brand);
+
+  if (index === -1) return title;
+
+  const before = title.slice(0, index);
+  const after = title.slice(index + brand.length);
+
+  return (
+    <span className="op-doc-title">
+      {before}
+      <span className="op-doc-title-brand" aria-label={brand}>
+        <span>Open</span>
+        <span>Prose</span>
+      </span>
+      {after}
+    </span>
   );
 }
 

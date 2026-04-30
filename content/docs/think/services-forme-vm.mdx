@@ -1,0 +1,138 @@
+---
+title: Services, Forme, and the VM
+description: How OpenProse wires and runs programs.
+---
+
+# Services, Forme, and the VM
+
+OpenProse programs are made out of services.
+
+A service is a unit of agent work with a contract. It names what it needs in
+`Requires`, what it is obligated to produce in `Ensures`, and any boundaries
+that matter for the work. A program is the entry point that gathers services
+into one run.
+
+That split is small, but it changes the shape of a session. Instead of asking
+one agent to remember every role, handoff, and output, you give the system a set
+of components it can wire and run.
+
+## Services are boundaries
+
+A service should be clear about its job.
+
+```markdown
+### Requires
+
+- `question`: the question to investigate
+
+### Ensures
+
+- `findings`: sourced claims that answer the question
+- `sources`: the sources consulted during the work
+```
+
+The names matter, but the prose matters too. OpenProse is read by a model, so a
+contract is not just a schema. It is a set of obligations the executing agent can
+understand.
+
+A good service boundary answers three questions:
+
+- What input does this part of the run need?
+- What public output does it promise?
+- What work should stay inside this service?
+
+That last question is easy to miss. Services are not just named steps. They are
+isolation boundaries. Each service gets its own workspace, writes its own
+artifacts, and publishes only the outputs declared by its contract.
+
+## Forme wires the graph
+
+Forme is the container for OpenProse programs. It reads the program and service
+contracts, resolves which outputs satisfy which inputs, and writes a manifest
+for the runtime.
+
+Traditional dependency injection containers wire software components by types
+and annotations. Forme wires agent services by meaning. If one service ensures
+`findings` and another requires `evidence`, Forme can read the descriptions and
+decide whether those are the same thing in this program.
+
+That judgment is deliberate. OpenProse does not try to replace model judgment
+with a brittle type system. If wiring is ambiguous, the right fix is usually to
+make the contracts clearer. When order or exact data flow matters, the author
+can pin it.
+
+The practical ladder is:
+
+1. Write contracts and let Forme auto-wire the graph.
+2. Add explicit wiring when a relationship matters.
+3. Add an `Execution` block when order matters.
+
+Start declarative. Add control when the work asks for it.
+
+## The manifest is the handoff
+
+The manifest is the materialized wiring for a run. It is what Forme produces and
+what the VM executes.
+
+It records:
+
+- the caller inputs the program needs
+- each service in the graph
+- where each service reads its inputs
+- where each service writes its outputs
+- which services can run in parallel
+- warnings Forme found while wiring
+
+The manifest is useful because it makes an intelligent decision inspectable.
+Forme may use semantic judgment to connect services, but the result is not
+hidden in the chat. It becomes a file the runtime can follow and a human can
+review.
+
+## The VM is the agent session
+
+The OpenProse VM is the model plus its harness, tools, subagent primitive, and
+filesystem access.
+
+That can sound stranger than it is. A modern coding agent can read files, write
+files, call tools, spawn isolated sessions, inspect state, and continue from
+what is left on disk. OpenProse gives that machine a program format.
+
+During execution, the VM reads the manifest and runs each service. A service
+does not need to know the whole graph. It receives:
+
+- its own service definition
+- file paths for its inputs
+- a private workspace path
+- the output files it must write
+
+When a service finishes, it returns a short confirmation. The VM copies the
+declared outputs into public bindings, appends to the run trace, and moves on.
+
+This is why OpenProse is not a hosted workflow builder wrapped around a model.
+The workflow runs inside the agent session. The filesystem is the durable state.
+The trace is the receipt.
+
+## The analogy
+
+The project uses this analogy because it is precise enough to be useful:
+
+```text
+Prose : Forme : agent harness :: Java : Spring : JVM
+```
+
+Prose is the language. Forme is the intelligent container. The agent harness is
+the VM.
+
+Do not push the analogy too far. OpenProse does not make model behavior
+deterministic, and it does not remove judgment from the run. It gives that
+judgment a contract, a graph, and a trace.
+
+## Agent note
+
+These docs explain the shape of OpenProse. They are not the execution spec.
+
+If you are an agent running or editing an OpenProse program, read
+[For AI agents](/agents/for-ai-agents) and follow the skill and canonical specs
+listed in [Canonical specs](/reference/specs).
+
+Next: [workspaces, bindings, and traces](/think/workspaces-bindings-traces).

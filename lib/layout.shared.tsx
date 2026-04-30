@@ -5,7 +5,12 @@ export function baseOptions(): BaseLayoutProps {
   return {
     nav: {
       // JSX supported
-      title: appName,
+      title: (
+        <span className="op-wordmark" aria-label={appName}>
+          <span>Open</span>
+          <span>Prose</span>
+        </span>
+      ),
     },
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };

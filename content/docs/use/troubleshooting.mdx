@@ -1,0 +1,119 @@
+---
+title: Troubleshooting
+description: Common OpenProse confusions and how to correct them.
+---
+
+# Troubleshooting
+
+Most OpenProse problems are not mysterious. They come from treating it like a shell tool, a prompt template, or a normal workflow framework.
+
+The quick rule:
+
+> If the docs and the `open-prose` skill disagree, trust the skill.
+
+## The agent tried to run `prose` as a shell command
+
+Inside an agent session, `prose run file.md` is an instruction to the agent. It is not usually a request to find a `prose` executable on `PATH`.
+
+The right behavior is:
+
+1. Load the `open-prose` skill.
+2. Read the program.
+3. Wire services if the program declares them.
+4. Execute through the current harness primitives.
+5. Write run state under `.prose/runs/`.
+
+From a normal shell, the CLI can pass the same instruction into a supported harness. That CLI is a bridge into the agent session, not the VM itself.
+
+See [for AI agents](/agents/for-ai-agents) for the stricter version.
+
+## The program is too vague
+
+A vague OpenProse program usually has vague `Ensures`.
+
+Weak:
+
+```markdown
+### Ensures
+
+- `report`: a good report
+```
+
+Better:
+
+```markdown
+### Ensures
+
+- `report`: concise Markdown report with findings, evidence, risks, and next steps
+- `evidence`: links or file paths supporting each major claim
+```
+
+The agent still has room to use judgment. The contract should make the obligation clear enough that another agent can tell whether the run fulfilled it.
+
+## Forme picked the wrong service
+
+Forme wires by contract meaning, not just by string equality. Exact names help, but they are not the whole system.
+
+If wiring is ambiguous:
+
+- make `Requires` and `Ensures` more specific
+- rename outputs so their intent is visible
+- add `Shape` constraints when a service must not take over another role
+- add explicit `Wiring` only when the relationship really needs to be pinned
+
+Do not jump straight to `Execution` just because the first draft was ambiguous. Tighten the contracts first.
+
+## The run produced a pasted blob
+
+OpenProse is meant to pass artifacts by path whenever possible.
+
+Services should do real work in their private workspace. Declared outputs should be copied into bindings. Downstream services should receive pointers to those artifacts, not a giant paste of every intermediate result.
+
+If the run is bloating context:
+
+- ask the service to write files instead of returning long text
+- make each `Ensures` output an artifact with a clear path
+- have the synthesizer read only the artifacts it needs
+- keep scratch work out of bindings
+
+See [workspaces, bindings, and traces](/think/workspaces-bindings-traces).
+
+## A subagent did the coordinator's job
+
+This is usually a shape problem.
+
+The coordinator should wire, delegate, and synthesize. A worker should do its own bounded service. If a worker starts running the whole program, the contract needs a clearer boundary.
+
+Useful fixes:
+
+- add `Shape` language that names what the service may and may not do
+- split a large service into smaller services
+- make upstream inputs and downstream outputs explicit
+- tell the coordinator not to hand the full manifest to every subagent
+
+OpenProse works best when each agent has the smallest useful view of the work.
+
+## The workflow is slower than a prompt
+
+It might be the wrong fit.
+
+OpenProse adds structure. That structure is useful when you need reuse, handoffs, parallel work, retries, or a trace. It is waste when the task fits in one good prompt.
+
+If a run feels heavy, ask:
+
+- Would I run this again?
+- Do I care what happened after the fact?
+- Does another agent need to understand the handoff?
+- Would parallel work or review improve the result?
+
+If the answer is no, use a prompt.
+
+## The docs and skill disagree
+
+Trust the skill.
+
+These docs explain the shape of OpenProse for humans. The `open-prose` skill and its linked reference specs are the execution source of truth for agents.
+
+If the site is stale, fix the site. Do not teach agents to infer runtime behavior from a friendly docs page.
+
+Next: [agent instructions](/agents/for-ai-agents).

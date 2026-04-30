@@ -1,0 +1,140 @@
+---
+title: Workspaces, bindings, and traces
+description: How OpenProse keeps agent work durable and context-efficient.
+---
+
+# Workspaces, bindings, and traces
+
+OpenProse uses the filesystem as the durable part of the session.
+
+That choice is not incidental. Agent context is scarce and easy to muddy. Files
+are inspectable, resumable, and cheap to pass by path. OpenProse keeps service
+work on disk, publishes only declared outputs, and records what happened in a
+trace.
+
+The main pieces are:
+
+- `workspace/`: private working files for each service
+- `bindings/`: public outputs that other services can read
+- `state.md`: the append-only trace for the run
+
+## Workspaces are private
+
+Each service gets its own workspace inside the run directory.
+
+```text
+.prose/runs/20260317-143052-a7b3c9/
+|-- workspace/
+|   |-- researcher/
+|   |   |-- notes.md
+|   |   |-- findings.md
+|   |   `-- sources.md
+|   `-- synthesizer/
+|       |-- outline.md
+|       `-- report.md
+```
+
+The service can write whatever it needs there: notes, drafts, scratch files,
+source extracts, failed attempts, and final outputs. Those files are preserved so
+you can inspect the run later.
+
+The workspace is private in the service sense. Other services do not consume it
+directly. A downstream service should not have to understand another service's
+drafts or internal reasoning. It should receive the output promised by the
+contract.
+
+## Bindings are public
+
+Bindings are the public interface between services.
+
+When a service completes, the VM looks at the service's `Ensures` contract and
+copies the declared output files from its workspace into `bindings/`.
+
+```text
+workspace/researcher/findings.md
+bindings/researcher/findings.md
+```
+
+That copy is the return step.
+
+The service writes to its workspace. The VM publishes the declared outputs.
+Downstream services read from the binding paths named in the manifest.
+
+This matters because it keeps the contract honest. If `researcher` ensures
+`findings` and `sources`, then those are the public artifacts other services can
+depend on. Its scratch notes may still exist, but they are not part of the
+interface.
+
+## Pointers beat pasted context
+
+OpenProse does not need to paste every intermediate artifact into the main
+agent context.
+
+A service can return:
+
+```text
+Service complete: researcher
+Outputs written:
+  - findings: workspace/researcher/findings.md
+  - sources: workspace/researcher/sources.md
+Summary: Found relevant sources and extracted claims.
+```
+
+The VM copies the files and carries the paths forward. The next service receives
+file paths, not a giant blob of text. It can read what it needs from disk.
+
+That is why workspaces and bindings are not just implementation details. They
+are part of the language's context strategy. Big workflows stay legible because
+artifacts remain artifacts.
+
+## Traces are the receipt
+
+Every run has a trace. In the canonical runtime, the trace is `state.md`.
+
+It records the important events of the run:
+
+```text
+# run:20260317-143052-a7b3c9 deep-research
+
+program: deep-research
+
+1-> [input] question ok
+2-> researcher ok
+3-> critic ok
+4-> synthesizer ok
+---end 2026-03-17T14:35:22Z
+```
+
+The trace is intentionally small. It is not a transcript of every thought or
+every token. It is the run ledger: inputs bound, services completed, errors
+signaled, delegates called, tests passed or failed, and completion status.
+
+This gives you a way to answer practical questions after the run:
+
+- Which service produced this file?
+- Did the critic actually run?
+- Where did the run stop?
+- Can the VM resume from the next service?
+- Which prior run did this run depend on?
+
+Without a trace, an agent workflow is just a long conversation. With a trace, it
+has a record.
+
+## What this buys you
+
+The workspace, binding, and trace split gives OpenProse three useful properties.
+
+First, isolation. A service can think and write freely without leaking every
+draft into downstream work.
+
+Second, context control. The runtime passes pointers to artifacts instead of
+stuffing the whole run into one prompt.
+
+Third, inspectability. After the run, you can open the directory and see what
+was produced, what was published, and what happened.
+
+This is the practical reason OpenProse treats the filesystem as part of the VM.
+The agent session is still doing the intelligent work, but the important state
+does not vanish when the chat scrolls away.
+
+Next: [when to use OpenProse](/think/when-to-use-it).

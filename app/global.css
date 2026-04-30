@@ -56,13 +56,14 @@
 
 @theme inline {
   /* Make Tailwind's font-sans and font-mono utilities resolve to OpenProse
-     fonts (loaded via next/font in app/layout.tsx). */
+     fonts, matching platform/apps/run. */
   --font-sans: var(--font-prose), Georgia, serif;
   --font-mono: var(--font-code), "SF Mono", Consolas, monospace;
 }
 
 html {
   scrollbar-gutter: stable;
+  background: var(--paper-cream);
 }
 
 html > body[data-scroll-locked] {
@@ -88,7 +89,7 @@ h5,
 h6 {
   text-wrap: balance;
   font-weight: 500;
-  letter-spacing: -0.015em;
+  letter-spacing: 0;
 }
 
 /* Selection: gilt-bronze tint, dark text */

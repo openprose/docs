@@ -1,26 +1,84 @@
 ---
 title: OpenProse Documentation
-description: A programming language for AI sessions. Programs are Markdown files agents execute as contracts.
+description: A programming language for AI sessions.
 ---
 
-OpenProse is a programming language for AI sessions. Programs are Markdown files that agents execute as contracts.
+# OpenProse is a programming language for AI sessions
 
-It is meant for the work that does not fit a single prompt and does not deserve a custom framework: research pipelines, code-review choreography, content production, multi-agent orchestration with retries and fan-out. You declare what each service requires and ensures, and the runtime wires them by reading the contract. The same program runs on Claude Code, Codex, and other Prose Complete hosts. Every run leaves an inspectable trace on disk.
+Write a Markdown contract. Your agent reads it, wires the services, runs the subagents, passes artifacts through the filesystem, and leaves a trace on disk.
+
+Plain prompts are great for one-off work. They get messy when the same process needs roles, handoffs, retries, memory, or a receipt. OpenProse gives that process a contract and lets an agent session execute it as a program.
 
 <Cards>
   <Card
-    title="Get Started"
-    href="/get-started/introduction"
-    description="Run your first program in 10 minutes."
+    title="Start"
+    href="/start/what-is-openprose"
+    description="Learn the shape, install the skill, and run your first program."
   />
   <Card
-    title="Concepts"
-    href="/concepts/intelligent-vm"
-    description="How OpenProse works under the hood."
+    title="Think"
+    href="/think/contracts-not-prompts"
+    description="Understand contracts, services, Forme, the VM, and traces."
   />
   <Card
-    title="For AI Agents"
-    href="/get-started/for-ai-agents"
-    description="Direct links to the agent-readable surfaces."
+    title="Use"
+    href="/use/examples"
+    description="Study examples, patterns, and the common ways runs go wrong."
+  />
+  <Card
+    title="For AI agents"
+    href="/agents/for-ai-agents"
+    description="A signpost to the skill and canonical execution specs."
   />
 </Cards>
+
+## The shape
+
+An OpenProse program is Markdown with a contract:
+
+```markdown
+---
+name: docs-review
+kind: program
+---
+
+### Requires
+
+- `repo`: repository to inspect
+
+### Ensures
+
+- `report`: concise review report with risks and next steps
+
+### Services
+
+- `reader`: maps the relevant files
+- `critic`: checks for correctness and missing tests
+- `writer`: turns the findings into a report
+```
+
+The program format is just Markdown. The execution model is real: contracts, services, wiring, workspaces, bindings, and traces.
+
+## When to reach for it
+
+Use OpenProse when a prompt has started turning into a process:
+
+- the work has roles, phases, or handoffs
+- several agents can work in parallel
+- the result needs a durable trace
+- the same process will run again
+- constraints should survive across runs
+
+If it fits in one good prompt, use one good prompt. OpenProse is ceremony until the workflow needs a contract.
+
+## What runs it
+
+A modern agent session is already a kind of computer: a model, a harness, tools, filesystem state, and sometimes subagents. OpenProse gives that computer a program format.
+
+Forme reads the contracts, resolves which services satisfy which requirements, writes a manifest, and then the model plus harness executes the run. Services work in private workspaces. Declared outputs become bindings. Other services receive paths to artifacts instead of giant pasted blobs.
+
+## Source of truth
+
+These docs explain the shape of OpenProse. They are not the execution spec.
+
+If you are an agent running an OpenProse program, start with [For AI agents](/agents/for-ai-agents). The `open-prose` skill and its linked specs are the source of truth for execution behavior.

@@ -1,0 +1,151 @@
+---
+title: Patterns
+description: Common workflow shapes in OpenProse.
+---
+
+# Patterns
+
+Patterns are small workflow shapes. They are not a reason to use OpenProse by themselves. First decide the job deserves a program. Then pick the shape.
+
+Start declarative. Add control only when the workflow needs it.
+
+1. Contract only: say what the run requires and ensures.
+2. Services and wiring: name the roles when handoffs matter.
+3. Execution: pin order, loops, and failure policy when choreography matters.
+
+For exact syntax, use [Specs](/reference/specs). This page is about shape.
+
+## Fan out, then synthesize
+
+Use this when branches are independent and the final answer benefits from distinct views.
+
+Good fits:
+
+- security, performance, and documentation review of the same change
+- separate research on different companies
+- multiple translation drafts before one editor pass
+
+Bad fit: one diagnosis where every branch needs the full context. In that case, a single focused investigator is usually cheaper and better.
+
+```text
+parallel:
+  security = session "Review for security issues"
+  performance = session "Review for performance issues"
+  docs = session "Review for documentation impact"
+
+session "Synthesize the review into prioritized findings"
+  context: { security, performance, docs }
+```
+
+In Contract Markdown, this usually means separate services with clear `Requires` and `Ensures`, then one synthesizer service that requires their outputs.
+
+## Pipeline
+
+Use a pipeline when each stage narrows or reshapes the previous artifact.
+
+```text
+let sources = session "Collect relevant source material"
+
+let claims = session "Extract claims with evidence"
+  context: sources
+
+let recommendations = session "Turn claims into recommendations"
+  context: claims
+
+session "Format recommendations as a report"
+  context: recommendations
+```
+
+Keep the context narrow. Pass the artifact the next stage needs, not everything the run has seen.
+
+## Worker plus critic
+
+Use this when review pressure is part of the work.
+
+```text
+let draft = session "Draft the migration plan"
+
+let critique = session "Find concrete risks, missing steps, and unsupported claims"
+  context: draft
+
+session "Revise the plan and address each valid critique"
+  context: { draft, critique }
+```
+
+Do not add a critic just because it feels rigorous. For ordinary self-checks, put the verification requirement into the worker's own contract. Use a separate critic when you want an adversarial pass or a different specialty.
+
+## Retry with learning
+
+Use a bounded loop when each attempt can learn from the last one.
+
+```text
+let draft = session "Create the first implementation"
+
+loop until **tests pass and lint passes** (max: 5):
+  let failures = session "Run checks and summarize failures"
+    context: draft
+
+  draft = session "Fix the implementation using the failure summary"
+    context: { draft, failures }
+```
+
+Every loop needs a concrete exit condition and a maximum. "Improve until good" is not a condition.
+
+## Controlled-burn exploration
+
+Use controlled exploration when several approaches might work and you want useful candidates without spending forever.
+
+```text
+parallel ("any", count: 3, on-fail: "ignore"):
+  session "Try a minimal implementation"
+  session "Try a library-based implementation"
+  session "Try a data-model-first implementation"
+  session "Try a test-first implementation"
+
+session "Compare the first three successful approaches"
+```
+
+Set the budget before the run. Decide how many candidates are enough. Stop when you have the signal you came for.
+
+## Cheap pass first, expensive pass later
+
+Use a cheap first pass when every item needs some signal, but only a few deserve deeper work.
+
+```text
+let screened = session "Score every item with fast local evidence"
+
+let shortlist = session "Select the top items that need deep review"
+  context: screened
+
+session "Perform deep review only on the shortlist"
+  context: shortlist
+```
+
+This pattern keeps the deferred items useful. A shallow score for every item is better than rich detail for the top slice and nothing for the rest.
+
+## Batch similar work
+
+Do not spin up one session per trivial item.
+
+```text
+session "Classify each item and return structured results"
+  context: items
+```
+
+Use per-item fan-out when the items are heavy, independent, or likely to fail separately. Batch when the task is simple and the output schema is crisp.
+
+## Pattern checks
+
+A pattern is probably wrong if:
+
+- one focused session would have better context than several branches
+- branches depend on each other but are marked parallel
+- a loop has no maximum
+- a critic gives generic taste notes instead of evidence
+- every stage receives the whole run context
+- the program uses the deepest model for every task
+- the workflow would be easier as a normal script
+
+OpenProse should make the work more inspectable, not just more elaborate.
+
+Next: [troubleshooting](/use/troubleshooting).

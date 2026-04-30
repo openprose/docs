@@ -1,0 +1,92 @@
+---
+title: Contracts, not prompts
+description: Learn the basic shape of OpenProse programs.
+---
+
+# Contracts, not prompts
+
+A prompt asks an agent to do something. A contract says what the work needs, what it must produce, what can go wrong, what must stay true, and how to handle judgment calls.
+
+That difference is small on the page and large in practice.
+
+Prompts are fine for one-off work. They start to blur when the same process needs handoffs, retries, memory, or review. OpenProse keeps the work in Markdown, but changes the shape from "please do this" to "given these inputs, these obligations must hold when you are done."
+
+For the exact Contract Markdown grammar, accepted section forms, and extraction rules, see the [canonical specs](/reference/specs). This page is the human mental model.
+
+## Requires and Ensures
+
+The center of an OpenProse service is the pair `Requires` and `Ensures`.
+
+`Requires` names what the service needs from its caller, another service, the environment, or a completed run. `Ensures` names what the service commits to produce or make true.
+
+```markdown
+### Requires
+
+- `draft`: article draft to improve
+- `audience`: who the article is for
+
+### Ensures
+
+- `final`: edited article ready for review
+- `notes`: short explanation of substantial edits
+```
+
+This is not decoration. It is the public interface of the work. When services have clear requirements and clear postconditions, Forme can wire them by meaning instead of relying only on file order or a long procedural prompt.
+
+The useful habit is to write obligations, not intentions. "Make it better" is a prompt. "`final`: edited article that preserves the author's claims and removes unclear structure" is closer to a contract.
+
+## Errors
+
+Some failures are part of the shape of the work. `Errors` names the failures a service is allowed to report instead of hiding them in prose after the fact.
+
+For example, a research service might declare that it can fail with insufficient sources, conflicting evidence, or missing access. A conversion service might declare unsupported input format. A reviewer might declare that the draft is too incomplete to evaluate.
+
+Named errors help callers decide what to do next. They also make a run easier to inspect because the failure has a place in the contract, not just in the transcript.
+
+## Invariants
+
+`Invariants` are promises that must hold regardless of the path the agent takes.
+
+Use them for boundaries that should survive success, partial success, retries, and failure handling:
+
+- do not invent citations
+- do not edit source files outside the workspace
+- preserve user-authored examples unless the contract explicitly asks to change them
+- keep private scratch work out of declared outputs
+
+Invariants are where you put the rules that should not be traded away during a clever workaround.
+
+## Strategies
+
+`Strategies` are guidance for judgment calls.
+
+They are not a script. They tell the service how to choose when the contract leaves room for interpretation:
+
+- when evidence is thin, broaden the search before concluding
+- when two outputs conflict, prefer the one backed by a traceable source
+- when the task is too large, produce a smaller useful slice and say what remains
+- when a requested change would violate an invariant, stop and report the conflict
+
+Good strategies preserve judgment without hiding the criteria. The agent still has to reason. The contract makes the criteria visible.
+
+## What Goes Where
+
+Put inputs in `Requires`.
+
+Put promised outputs and postconditions in `Ensures`.
+
+Put known failure modes in `Errors`.
+
+Put non-negotiable boundaries in `Invariants`.
+
+Put judgment guidance in `Strategies`.
+
+If you find yourself writing a long sequence of steps, ask whether the order truly matters. If the answer is no, tighten the contract. If the answer is yes, that choreography belongs in `Execution`, which is covered by the canonical specs and by the runtime model.
+
+## Why This Matters
+
+Contracts make OpenProse programs inspectable. A human can see what each service owes. An agent can extract the same shape. Forme can resolve services that satisfy each other's requirements. The run can leave a trace that says what was promised and what was produced.
+
+OpenProse does not make the model deterministic. It gives the model a contract, a workspace, and a record of the work. That is enough to make larger sessions easier to inspect and improve.
+
+Next: [services, Forme, and the VM](/think/services-forme-vm).

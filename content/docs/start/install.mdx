@@ -1,0 +1,106 @@
+---
+title: Install
+description: Install the OpenProse skill and run through the shell entrypoint.
+---
+
+# Install
+
+OpenProse runs in an agent session. The important install is the
+`open-prose` skill, because the skill tells the agent how to read an
+OpenProse program, wire services, run the work, and write a trace.
+
+The `prose` CLI is optional. It is a shell entrypoint into an agent harness,
+not a separate OpenProse VM. It packages commands like `prose run file.md`
+into an agent-session instruction, then streams the harness output back to
+your terminal.
+
+## Requirements
+
+You need:
+
+- An agent harness that can read and write files in the working directory.
+- A subagent or session-spawning primitive for multi-service programs.
+- Node.js 18 or newer if you use the CLI.
+- Credentials for the harness you choose.
+
+Single-component programs can run without subagents. Multi-service programs
+need a harness that can start isolated worker sessions.
+
+## Install the skill
+
+Install the `open-prose` skill:
+
+```bash
+npx skills add openprose/prose
+```
+
+After the skill is available, an OpenProse command inside an agent session is
+an instruction to that agent:
+
+```text
+prose run hello-openprose.md
+```
+
+The agent should not look for a `prose` binary just because the instruction
+starts with `prose`. It should load the skill, read the Markdown contract, and
+run the program in-session.
+
+## Install the CLI
+
+If you want to run OpenProse from a shell, install the CLI:
+
+```bash
+npm install --global @openprose/prose-cli
+prose --help
+```
+
+For project-local or one-off use, you can also invoke the package through
+`npx`:
+
+```bash
+npx @openprose/prose-cli doctor
+```
+
+The installed binary is named `prose`.
+
+## Check your setup
+
+Run `doctor` before the first real program:
+
+```bash
+prose doctor
+```
+
+The CLI checks whether the `open-prose` skill is available for the selected
+harness. For a specific harness, pass `--harness`:
+
+```bash
+prose doctor --harness claude-sdk --install
+```
+
+The default harness is `codex-sdk`. Other supported harnesses include
+`claude-sdk`, `codex`, `claude`, and `mock`.
+
+## Run path
+
+There are two common ways to run the same program:
+
+```text
+prose run hello-openprose.md
+```
+
+Use that form inside an agent session.
+
+```bash
+prose run hello-openprose.md
+```
+
+Use that form from a shell after installing the CLI. The shell command still
+hands execution to the selected agent harness. The harness and skill are what
+run the OpenProse program.
+
+When a run completes, OpenProse writes durable state under `.prose/runs/`.
+That trace is where you inspect inputs, outputs, service workspaces, and the
+execution log.
+
+Next: [write your first program](/start/first-program).

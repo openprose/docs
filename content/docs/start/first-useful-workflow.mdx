@@ -1,0 +1,86 @@
+---
+title: Your first useful workflow
+description: Run a small multi-service workflow where OpenProse starts to matter.
+---
+
+# Your first useful workflow
+
+Hello world proves that the loop works. A useful OpenProse workflow proves why you would write a program at all.
+
+Use this example when the work wants more than one point of view. A code review is a good first shape because the roles are obvious: one reviewer can think about security, another can think about performance, another can think about style, and a final service can turn the separate notes into one report.
+
+<ProseProgram src="vendor/prose-examples/16-parallel-reviews/index.md" title="parallel-reviews.md" />
+
+## What this program says
+
+The program has one input:
+
+- `code`: the code to review
+
+It promises one output:
+
+- `report`: a unified review report that covers security, performance, and style
+
+The `Services` section names the roles that can satisfy that promise. The roles are intentionally plain:
+
+- `security-reviewer` looks for risks and unsafe assumptions
+- `perf-reviewer` looks for slow paths and waste
+- `style-reviewer` looks for readability and local conventions
+- `synthesizer` turns the separate reviews into one report
+
+That is the first useful OpenProse move: split the work where splitting helps, then make the handoff explicit.
+
+## Run it small
+
+Start with a small target. A single file, a short diff, or a narrow directory is better than a whole repo for a first run.
+
+From an agent session with the `open-prose` skill installed:
+
+```text
+prose run vendor/prose-examples/16-parallel-reviews/index.md
+```
+
+The program requires `code`. If the runner does not already have a value for that input, it should ask you for one. Give it a path, a diff, or a compact snippet.
+
+When the run is finished, read the output as a contract check:
+
+- Did the report cover security, performance, and style?
+- Did the separate points of view stay separate until synthesis?
+- Did the final report prioritize what matters instead of pasting every note?
+- Did the run leave enough trace to understand what happened?
+
+If the answer is no, the program needs a tighter contract. That is normal. OpenProse programs are meant to be revised like code.
+
+## Make one change
+
+Try one small edit after the first run.
+
+If the report is too broad, make the input narrower. If the reviewers overlap too much, give one role a sharper name. If the final report is noisy, add an `Ensures` obligation for prioritization.
+
+For example, a stricter output contract might say:
+
+```markdown
+### Ensures
+
+- `report`: unified review report covering security, performance, and style
+- each issue has: severity, evidence, and a concrete next step
+- issues are sorted by risk before polish
+```
+
+That edit changes the shape of the run without turning the program into a long prompt. The contract still says what must be true when the work is done.
+
+## Why this is different from one prompt
+
+You could ask an agent to "review this code for security, performance, and style." For a small snippet, that is fine.
+
+The program becomes useful when you want the shape to survive:
+
+- the same review should run again next week
+- different roles should work independently
+- the synthesis should be inspectable
+- the output contract should be reviewable in git
+- future changes should improve the workflow instead of disappearing into chat history
+
+That is the OpenProse taste test. Reach for it when the prompt has become a process.
+
+Next: [learn contracts](/think/contracts-not-prompts).
