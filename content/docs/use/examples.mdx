@@ -1,0 +1,102 @@
+---
+title: Examples
+description: A curated path through the OpenProse examples.
+---
+
+# Examples
+
+Read these examples in order. They move from the smallest possible service to a program with explicit phases, review, and testing.
+
+The point is not to memorize syntax. Look for the contract shape:
+
+- what the program requires
+- what it ensures
+- where judgment belongs
+- when a workflow stays declarative
+- when order is important enough for `Execution`
+
+## Hello world
+
+Start here to see the minimum surface area. It is a service, not a program, and it has no required inputs.
+
+<ProseProgram src="vendor/prose-examples/01-hello-world.md" title="hello-world.md" />
+
+Notice how little structure is needed. The service only promises `greeting`. That is enough for the VM to know what successful completion means.
+
+Use this shape when you are testing whether the OpenProse loop is installed and the agent knows how to read a contract.
+
+## Research and summarize
+
+This example adds an input, a more specific output, and strategies for judgment calls.
+
+<ProseProgram src="vendor/prose-examples/02-research-and-summarize.md" title="research-and-summarize.md" />
+
+The useful detail is the constraint on the bullets. The service does not just promise a summary. It promises five bullets, practical implications, and grounding in recent sources.
+
+The `Strategies` section gives the agent room to reason without leaving the workflow vague. If sources are thin, broaden the search. If the findings are too technical, translate them for developers.
+
+## Code review
+
+This is still a single service, but the contract is closer to real work.
+
+<ProseProgram src="vendor/prose-examples/03-code-review.md" title="code-review.md" />
+
+The output has shape:
+
+- a unified report
+- coverage across security, performance, and maintainability
+- severity on each issue
+- actionable recommendations
+- priority by severity
+
+That is the difference between "review this" and a contract. The service has room to use judgment, but the result has obligations.
+
+## Parallel reviews
+
+This is the first example where OpenProse starts to pay for itself.
+
+<ProseProgram src="vendor/prose-examples/16-parallel-reviews/index.md" title="parallel-reviews.md" />
+
+The services are separate points of view:
+
+- `security-reviewer`
+- `perf-reviewer`
+- `style-reviewer`
+- `synthesizer`
+
+The program does not need a long script. The roles and the final report are clear enough for a first pass. If you need sharper boundaries later, give the services their own contracts or add explicit execution.
+
+For a guided run, see [your first useful workflow](/start/first-useful-workflow).
+
+## Captain's chair
+
+This example is larger because order matters. It plans, researches, reviews the plan, implements, reviews the implementation, tests, and then summarizes.
+
+<ProseProgram src="vendor/prose-examples/29-captains-chair/index.md" title="captains-chair.md" />
+
+The important change is the `Execution` block. Declarative contracts are still present, but the program also pins the phases:
+
+- plan first
+- run research sweeps
+- synthesize an implementation plan
+- let a critic review the plan
+- implement
+- review the implementation
+- test
+- produce the final result
+
+Use this shape when the workflow has real order, branching, or retry points. Do not start here for a small task. Start declarative, add wiring when relationships matter, and use `Execution` when order matters.
+
+## Choosing the right example
+
+| Example | Use it to study |
+| --- | --- |
+| Hello world | the minimum service contract |
+| Research and summarize | inputs, output constraints, and strategies |
+| Code review | a practical single-service contract |
+| Parallel reviews | fan out, then synthesize |
+| Captain's chair | explicit order with `Execution` |
+
+Plain prompts are still the right tool for one-off work. These examples are useful when you want a workflow to be inspectable, reusable, and worth improving.
+
+Next: [study common patterns](/use/patterns).

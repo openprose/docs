@@ -1,0 +1,15 @@
+.git
+.github
+node_modules
+.next
+.vercel
+.env
+.env.local
+.env.*.local
+README.md
+LICENSE
+docs/
+__tests__/
+scripts/
+*.log
+.DS_Store

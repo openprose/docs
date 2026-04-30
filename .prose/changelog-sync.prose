@@ -1,0 +1,72 @@
+---
+name: changelog-sync
+kind: program
+---
+
+# Sync the OpenProse CHANGELOG into the docs site
+
+The OpenProse language CHANGELOG lives in the public `openprose/prose`
+repo. This program fetches it over HTTPS at build time and emits a
+Fumadocs page at `content/docs/changelog.mdx` so visitors to the docs
+site always see the canonical release history without us having to
+hand-mirror a copy. The build pulls fresh on every run; there is no
+local cache.
+
+### Services
+
+- `changelog_fetcher`: HTTPS GET against `changelog_url`, returning the
+  response body as a UTF-8 string. Fails loudly on any non-200 status,
+  on a network error, or on an empty body.
+- `changelog_parser`: parse Keep-a-Changelog format, returning an ordered
+  list of `{ version, date, body }` entries newest-first. The
+  `[Unreleased]` entry, if present, is preserved verbatim with no date.
+- `mdx_emitter`: write `content/docs/changelog.mdx` with a frontmatter
+  block (`title: "Changelog"`, `description: "..."`, `kind: changelog`)
+  followed by an MDX body where each entry is an H2 heading with a
+  date sub-line and the entry's verbatim Markdown body content
+
+### Requires
+
+- `repo_root`: absolute path to the prose-docs/ checkout
+- `changelog_url`:
+  `https://raw.githubusercontent.com/openprose/prose/main/CHANGELOG.md`
+- `output_path`: `<repo_root>/content/docs/changelog.mdx`
+- `prose_repo_url`: `https://github.com/openprose/prose`
+
+### Ensures
+
+- `changelog_emitted`: `output_path` exists after the run and parses as
+  valid MDX (Fumadocs picks it up automatically on the next build)
+- `coverage`: every entry in the upstream CHANGELOG.md appears in the
+  emitted MDX. No section is dropped or paraphrased.
+- `commit_links`: each entry's date sub-line links to
+  `${prose_repo_url}/releases/tag/v<version>` whenever `version` is a
+  real semver. The `[Unreleased]` entry has no link.
+- `frontmatter_valid`: `title`, `description`, and `kind: changelog` are
+  all present and non-empty in the emitted file's frontmatter
+
+### Strategies
+
+- if the fetch returns non-200 or an empty body, fail loudly with both
+  the URL and the HTTP status in the error so a transient upstream
+  outage is easy to triage from CI logs
+- the `[Unreleased]` entry, when present, is rendered as the first H2
+  with no release-tag link. Proper semver entries get the
+  `releases/tag/v<version>` link in their date sub-line.
+- do not cache the fetch result. Every build pulls fresh so a release
+  on `openprose/prose` shows up on the docs site as soon as the next
+  build runs.
+- preserve the upstream Markdown body verbatim inside each H2's body.
+  Do not paraphrase, reorder, or rewrap. The CHANGELOG is canonical;
+  the docs site mirrors it.
+- skip the historical git-tag cross-check that earlier drafts of this
+  program performed. Without a local checkout of `openprose/prose` we
+  trust the fetched CHANGELOG as the source of truth.
+
+### Execution
+
+1. Call `changelog_fetcher.fetch(changelog_url)` to get the body string.
+2. Call `changelog_parser.parse(body)` to get the ordered entries.
+3. Call `mdx_emitter.write(output_path, { entries, prose_repo_url })`.
+4. Print `[changelog-sync] wrote <N> entries to <output_path>` so CI
+   logs make the run legible at a glance.

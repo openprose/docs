@@ -1,0 +1,49 @@
+---
+title: Command surface
+description: The OpenProse command names and what they are for.
+---
+
+# Command surface
+
+OpenProse commands are first an agent-session command language.
+
+When you type `prose run file.md` inside an agent session, the agent should load the `open-prose` skill and execute the program in-session.
+
+When you use the CLI from a shell, the CLI packages that same instruction and sends it into a supported harness. The CLI does not replace the VM.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `prose run file.md` | run a Contract Markdown or ProseScript program |
+| `prose lint file.md` | check Contract Markdown structure before a run |
+| `prose preflight file.md` | check dependencies and environment without executing |
+| `prose test path` | run OpenProse tests |
+| `prose inspect run-id` | inspect a completed run |
+| `prose status [--graph]` | summarize recent runs, optionally as a graph |
+| `prose install [--update]` | install or update OpenProse dependencies |
+| `prose examples [name]` | list or run bundled examples |
+| `prose help` | show OpenProse help |
+| `prose migrate file.prose` | convert ProseScript toward Contract Markdown |
+
+## Shell CLI
+
+The shell CLI is useful when you are outside an agent session.
+
+```bash
+prose run programs/reviewer.md
+prose run programs/reviewer.md --harness claude-sdk
+prose doctor
+```
+
+The current CLI supports harnesses such as `codex-sdk`, `claude-sdk`, `codex`, `claude`, and `mock`. It can check whether the `open-prose` skill is installed for the selected provider and can run `prose doctor` to inspect setup.
+
+For exact install commands, flags, harness defaults, and exit behavior, read the canonical [CLI README](https://github.com/openprose/prose/blob/main/cli/README.md).
+
+## Agent rule
+
+If you are an agent and the user gives you `prose ...` in chat, do not shell out to the CLI by default.
+
+Load the skill and treat the command as an instruction to the current session.
+
+Next: [canonical specs](/reference/specs).

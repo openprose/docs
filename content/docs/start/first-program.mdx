@@ -1,0 +1,78 @@
+---
+title: Your first program
+description: Write and run a tiny OpenProse program.
+---
+
+# Your first program
+
+Hello world proves the loop. This program takes one input, asks the agent to
+explain it, and leaves a run trace you can inspect afterward.
+
+Create `hello-openprose.md`:
+
+```markdown
+---
+name: hello-openprose
+kind: program
+---
+
+### Requires
+
+- `topic`: thing to explain
+
+### Ensures
+
+- `summary`: a short explanation of the topic
+
+### Execution
+
+Tell the user what `topic` means in plain English.
+Write the result to `summary.md`.
+```
+
+Run it from an agent session:
+
+```text
+prose run hello-openprose.md --topic "why traces matter"
+```
+
+Or, if you installed the CLI, run the same command from a shell:
+
+```bash
+prose run hello-openprose.md --topic "why traces matter"
+```
+
+In both cases, the command is asking an agent harness to run the program. The
+CLI does not execute the program by itself.
+
+## What happened
+
+The agent reads `hello-openprose.md` as a Contract Markdown program.
+
+`Requires` says the program needs a `topic`. The command supplies it with
+`--topic "why traces matter"`.
+
+`Ensures` says the run must produce a `summary`. This is the promise you can
+check when the run is done.
+
+`Execution` pins the tiny bit of choreography for this first program. Most
+OpenProse programs start declarative and only add execution steps when order
+matters.
+
+Because this program has one component and no `Services` section, there is no
+service graph to wire and no subagent fan-out required. The agent can run it
+directly.
+
+## Inspect the trace
+
+After the run, look under the newest directory in `.prose/runs/`.
+
+You should find the durable record of the run: the inputs, the execution log,
+and the output artifacts produced by the program. Exact filenames can vary as
+the tooling evolves, but the point is stable: a run leaves a receipt on disk
+instead of disappearing into chat history.
+
+That receipt is why OpenProse is more than a long prompt. The contract, the
+artifacts, and the trace can be reviewed, versioned, and improved.
+
+Next: [try a useful workflow](/start/first-useful-workflow).

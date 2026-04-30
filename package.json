@@ -1,0 +1,62 @@
+{
+  "name": "@openprose/docs",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "description": "Documentation site for OpenProse, the programming language for AI sessions.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/openprose/docs.git"
+  },
+  "homepage": "https://docs.openprose.ai",
+  "packageManager": "pnpm@10.11.0",
+  "scripts": {
+    "postinstall": "fumadocs-mdx",
+    "prebuild": "claude -p 'prose run .prose/generate-agent-skills.prose && prose run .prose/changelog-sync.prose'",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "fumadocs-mdx && next typegen && tsc --noEmit",
+    "lint": "eslint .",
+    "spell": "cspell --no-progress --no-summary 'content/**/*.{md,mdx}' '*.md' 'README.md'",
+    "check": "pnpm typecheck && pnpm lint && pnpm spell",
+    "pretest": "fumadocs-mdx",
+    "test": "vitest run",
+    "check:emdash": "scripts/check-em-dash-in-content.sh",
+    "check:links": "tsx scripts/check-links.ts"
+  },
+  "dependencies": {
+    "@shikijs/transformers": "^4.0.2",
+    "fumadocs-core": "16.8.5",
+    "fumadocs-mdx": "14.3.2",
+    "fumadocs-ui": "16.8.5",
+    "lucide-react": "^1.11.0",
+    "next": "16.2.4",
+    "posthog-js": "^1.372.5",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "shiki": "^4.0.2",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.4",
+    "@types/glob": "^9.0.0",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/ui": "^4.1.5",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "cspell": "^10.0.0",
+    "eslint": "^10.2.1",
+    "eslint-config-next": "16.2.4",
+    "glob": "^13.0.6",
+    "happy-dom": "^20.9.0",
+    "postcss": "^8.5.10",
+    "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  }
+}

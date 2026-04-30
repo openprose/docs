@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agentskills.io/schemas/agent-skills-index.v0.2.0.json",
+  "version": "0.2.0",
+  "generatedAt": "2026-04-28T00:00:00.000Z",
+  "skills": [
+    {
+      "name": "OpenProse Getting Started",
+      "type": "documentation",
+      "description": "Onboard a developer to OpenProse: programs as Markdown contracts, agents as runtimes.",
+      "url": "https://docs.openprose.ai/.well-known/agent-skills/openprose-getting-started/SKILL.md",
+      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

@@ -1,0 +1,116 @@
+---
+title: When to use OpenProse
+description: Good fits, bad fits, and the quick taste test.
+---
+
+# When to use OpenProse
+
+Use OpenProse when a prompt has become a process.
+
+It is not a better wrapper around chat. It is a way to write a reusable contract for agent work: inputs, obligations, roles, artifacts, failure cases, and the trace the run leaves behind.
+
+If one good prompt gets the job done, use one good prompt. OpenProse adds structure. That structure is only worth it when it buys something real.
+
+## Good fits
+
+### Repeated work
+
+Use OpenProse when you keep rebuilding the same workflow in chat:
+
+- weekly research digests
+- repeated code review passes
+- release note generation
+- intake, triage, and routing
+- report drafting with the same inputs and quality bar
+
+The question is not "could an agent do this?" The question is "will I want the same agent process again?"
+
+### Work with handoffs
+
+OpenProse starts to matter when the work has roles, stages, or artifacts that should not blur together.
+
+A prompt can say "review this code." A program can say:
+
+- one service checks security
+- one service checks performance
+- one service checks documentation impact
+- one service synthesizes the findings
+- the final output must include file paths, severity, and evidence
+
+That is a contract, not a chat request. For the mental model, read [Contracts, not prompts](/think/contracts-not-prompts).
+
+### Parallel work
+
+Use OpenProse when independent branches can run at the same time and join later.
+
+Good examples:
+
+- review the same change from security, performance, and product angles
+- collect independent research on different competitors
+- classify a batch of files before a synthesis pass
+
+Bad example: split one bug diagnosis into "code," "logs," and "context" agents when each one needs the whole picture. That usually creates coordination overhead without better thinking.
+
+### Work that needs a receipt
+
+OpenProse leaves work on disk. That matters when you need to inspect what happened, rerun part of the work, or hand artifacts to another service by path instead of pasting giant blobs into the next prompt.
+
+Use it when the trace and workspace are part of the value. See [Workspaces, bindings, and traces](/think/workspaces-bindings-traces).
+
+### Work with real acceptance criteria
+
+OpenProse is a good fit when you can name what must be true at the end:
+
+- every item has a summary and score
+- every finding has evidence
+- every generated file exists at a declared path
+- every failed branch is reported with a reason
+
+If the only success criterion is "make it better," stay in chat until you know what "better" means.
+
+## Bad fits
+
+### One-shot answers
+
+Do not write an OpenProse program for a single question, a quick explanation, or a small decision. Ask the agent directly.
+
+OpenProse is overkill when the output is just a paragraph and you do not need a trace.
+
+### Tiny edits
+
+Do not use OpenProse to fix one typo, rename one file, or make a simple local change. The ceremony will cost more than the work.
+
+### Deterministic work
+
+If shell, SQL, Python, or a normal queue can do the job exactly, use that.
+
+OpenProse is for judgment-heavy work inside agent sessions. It is a bad core for exact accounting, payment flow, policy enforcement, or anything where a model should not be deciding the next state.
+
+### Vague work
+
+A contract will not rescue an unclear goal.
+
+If you cannot name the inputs, the output, and the definition of done, writing Markdown around the request only makes the vagueness look official.
+
+### Work that only looks parallel
+
+Parallel agents are not free. Use them when the work is genuinely independent or when different viewpoints should stay separate until synthesis.
+
+Do not fan out tiny tasks. Do not split a single line of reasoning across agents just to make the graph look busy.
+
+## The taste test
+
+Before writing a program, answer these:
+
+1. What does the workflow require?
+2. What must it ensure?
+3. What artifacts should exist on disk?
+4. Which parts can run independently?
+5. What can fail, retry, or degrade?
+6. Will this workflow run again?
+
+If most answers are blank, OpenProse is too much. Start with a prompt.
+
+If the answers are clear, OpenProse gives the process a contract, a workspace, and a trace.
+
+Next: [try a useful workflow](/start/first-useful-workflow) or [browse examples](/use/examples).

@@ -1,0 +1,43 @@
+---
+title: Canonical specs
+description: Links to the skill and source-of-truth reference files.
+---
+
+# Canonical specs
+
+If this site and the skill disagree, trust the skill.
+
+The docs site is orientation. These files define how OpenProse agents should behave.
+
+## Skill
+
+- [`open-prose` skill](https://github.com/openprose/prose/blob/main/skills/open-prose/SKILL.md)
+
+Agents should start here. The skill contains the activation rules, path table, command routing, host primitive adapter, and fit check.
+
+## Core specs
+
+| File | What it defines |
+| --- | --- |
+| [Contract Markdown](https://github.com/openprose/prose/blob/main/skills/open-prose/contract-markdown.md) | the `.md` program and service format |
+| [Forme](https://github.com/openprose/prose/blob/main/skills/open-prose/forme.md) | semantic wiring and manifest generation |
+| [Prose VM](https://github.com/openprose/prose/blob/main/skills/open-prose/prose.md) | execution behavior for manifests and services |
+| [ProseScript](https://github.com/openprose/prose/blob/main/skills/open-prose/prosescript.md) | the imperative scripting layer for `.prose` and `### Execution` |
+| [Filesystem state](https://github.com/openprose/prose/blob/main/skills/open-prose/state/filesystem.md) | the default run-state layout |
+| [Session primitive](https://github.com/openprose/prose/blob/main/skills/open-prose/primitives/session.md) | how isolated service sessions should behave |
+
+## Authoring guidance
+
+| File | What it helps with |
+| --- | --- |
+| [Tenets](https://github.com/openprose/prose/blob/main/skills/open-prose/guidance/tenets.md) | design principles behind the language |
+| [Patterns](https://github.com/openprose/prose/blob/main/skills/open-prose/guidance/patterns.md) | reusable workflow shapes |
+| [Antipatterns](https://github.com/openprose/prose/blob/main/skills/open-prose/guidance/antipatterns.md) | common ways OpenProse programs go wrong |
+
+## CLI and packages
+
+- [OpenProse README](https://github.com/openprose/prose/blob/main/README.md)
+- [CLI README](https://github.com/openprose/prose/blob/main/cli/README.md)
+- [Standard library](https://github.com/openprose/prose/tree/main/packages/std)
+
+Reference pages here should stay shallow. If a detail is normative, link to source instead of copying it.

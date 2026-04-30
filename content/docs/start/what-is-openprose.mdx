@@ -1,0 +1,59 @@
+---
+title: What is OpenProse?
+description: The short mental model for OpenProse.
+---
+
+# What is OpenProse?
+
+OpenProse is a programming language for AI sessions.
+
+A modern agent session already has a lot of the pieces of a computer: a model, a tool loop, a filesystem, subprocesses or subagents, and persistent state. OpenProse gives that system a program format.
+
+The program is a Markdown contract. An agent reads the contract, wires the services, runs the work, passes artifacts through the filesystem, and leaves a durable trace.
+
+```text
+Markdown contract
+  -> Forme wiring
+  -> manifest
+  -> VM run
+  -> workspaces + bindings + trace
+```
+
+## The AI session is the computer
+
+OpenProse does not try to make the model deterministic. It gives the model a contract, a workspace, and a trace so complex work has a shape you can inspect and improve.
+
+The VM is the model plus its harness: tools, files, shell access, browser access, subagents, and whatever state the run is allowed to use. In a Prose Complete harness, the agent and the skill execute the program inside that session.
+
+## The program is Markdown
+
+Markdown is not a gimmick here. The executor is an agent, so the program should be readable by agents. The user is a human builder, so the program should be readable in review. Git should be able to show a useful diff.
+
+The important parts of a small program are usually easy to spot:
+
+- `Requires` names what the service needs.
+- `Ensures` names what the service must produce.
+- `Services` names the work that can satisfy those contracts.
+- `Execution` pins order when choreography matters.
+
+You do not need all of that for every program. Start declarative. Add wiring when relationships matter. Add execution when order matters.
+
+## Contracts, services, Forme, and traces
+
+A prompt says, "do this." A contract says, "given these inputs, these things must be true when you are done."
+
+Services are the pieces of work in the program. Forme is the container that reads their contracts and decides how they fit together. The manifest is the materialized wiring for a run. The VM is the agent session that executes it.
+
+The trace is the record. Each run has places for private work, declared outputs, and bindings that downstream services can receive as pointers. This keeps handoffs inspectable without turning every step into a giant paste.
+
+## How it differs from other shapes
+
+OpenProse is not just a longer prompt. Prompts are good when the work fits in one exchange. OpenProse is for recurring or fragile workflows where roles, handoffs, constraints, and receipts matter.
+
+OpenProse is also not an external workflow engine that controls the model from the outside. Most orchestration frameworks wrap the model. OpenProse gives the agent a program to execute from inside the session.
+
+That is the practical difference: the point is not to replace judgment with plumbing. The point is to put recurring agent work on rails.
+
+OpenProse is early. The program format is useful today, but the tools and conventions are still settling. Expect sharp edges, and prefer small workflows before betting a large process on it.
+
+Next: [install OpenProse](/start/install).

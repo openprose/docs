@@ -1,0 +1,87 @@
+---
+title: For AI agents
+description: Read this before running, editing, or explaining OpenProse programs.
+---
+
+# For AI agents
+
+If you are an AI agent, this page is a signpost, not the execution spec.
+
+Load the `open-prose` skill before running, editing, linting, testing, migrating, or explaining an OpenProse program.
+
+The skill and its linked specs are the source of truth for execution behavior. These docs are for human orientation.
+
+## First move
+
+When you see:
+
+- `prose run ...`
+- `prose lint ...`
+- `prose test ...`
+- a `.md` file with `kind:` frontmatter
+- a `.prose` file
+- a user asking for reusable multi-agent orchestration
+
+load the `open-prose` skill and follow its path table.
+
+Do not infer execution semantics from this docs site.
+
+## Command routing
+
+Inside an agent session, treat `prose ...` as an in-session command language.
+
+For `prose run file.md`:
+
+1. Read the Contract Markdown program.
+2. Load the narrowest required specs.
+3. Wire services through Forme if the program declares services.
+4. Execute through the Prose VM behavior using host primitives.
+5. Persist run state under `.prose/runs/`.
+
+Do not run `prose`, `npx prose`, or `npx @openprose/prose-cli` from inside the VM unless the user or harness explicitly tells you that you are using the CLI as an outer wrapper.
+
+The shell executable is a bridge into an agent harness. It is not the VM.
+
+## Host primitives
+
+Map the abstract OpenProse operations onto the current host:
+
+| Primitive | What it means |
+| --- | --- |
+| `spawn_session` | run a service or branch in an isolated agent session |
+| `ask_user` | pause for missing caller input |
+| `read_state` / `write_state` | read and write `.prose/runs/{id}/` files |
+| `copy_binding` | publish declared outputs from a workspace to bindings |
+| `check_env` | verify that an environment variable exists without revealing it |
+
+If the host lacks a required primitive, say so. Do not fake a multi-agent run as if isolation happened.
+
+## Fit check
+
+Decline OpenProse for one-shot work.
+
+Use it when the task has a reusable workflow shape: roles, handoffs, retries, parallel exploration, durable constraints, or a run trace the user will care about later.
+
+If the user says "just do it", respect that.
+
+## State and artifacts
+
+Prefer paths over pasted content.
+
+Services do their work in private workspaces. Declared outputs are copied into bindings. Downstream services inspect the artifact paths they need.
+
+Keep scratch out of bindings. Do not publish undeclared files as outputs.
+
+## Canonical files
+
+Use the files linked from [canonical specs](/reference/specs):
+
+- `SKILL.md`
+- `contract-markdown.md`
+- `forme.md`
+- `prose.md`
+- `prosescript.md`
+
+If this docs site and the skill disagree, trust the skill.
+
+Next: [reference overview](/reference/overview).
