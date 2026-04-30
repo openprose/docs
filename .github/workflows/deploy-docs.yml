@@ -25,7 +25,7 @@ jobs:
         run: |
           flyctl deploy \
             --remote-only \
-            --build-arg DOCS_PREVIEW_MODE=true \
+            --build-arg DOCS_PREVIEW_MODE=false \
             --build-arg NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

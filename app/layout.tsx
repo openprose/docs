@@ -2,8 +2,14 @@ import { RootProvider } from "fumadocs-ui/provider/next";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { source } from "@/lib/source";
 import { baseOptions } from "@/lib/layout.shared";
+import type { Metadata } from "next";
+import { SITE } from "@/lib/site";
 import "./global.css";
 import "./brand.css";
+
+export const metadata: Metadata = {
+  metadataBase: new URL(SITE.canonicalBaseUrl),
+};
 
 export default function Layout({ children }: LayoutProps<"/">) {
   return (

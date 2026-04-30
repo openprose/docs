@@ -11,7 +11,23 @@ describe("app/robots.ts", () => {
   it("allows everything when preview mode is off and includes sitemap", () => {
     vi.stubEnv("DOCS_PREVIEW_MODE", "false");
     const config = robots();
-    expect(config.rules).toEqual([{ userAgent: "*", allow: "/" }]);
+    expect(config.rules).toContainEqual({ userAgent: "*", allow: "/" });
+    expect(config.rules).toContainEqual({ userAgent: "Googlebot", allow: "/" });
+    expect(config.rules).toContainEqual({
+      userAgent: "Google-Extended",
+      allow: "/",
+    });
+    expect(config.rules).toContainEqual({
+      userAgent: "OAI-SearchBot",
+      allow: "/",
+    });
+    expect(config.rules).toContainEqual({ userAgent: "GPTBot", allow: "/" });
+    expect(config.rules).toContainEqual({ userAgent: "ClaudeBot", allow: "/" });
+    expect(config.rules).toContainEqual({
+      userAgent: "PerplexityBot",
+      allow: "/",
+    });
+    expect(config.rules).toContainEqual({ userAgent: "CCBot", allow: "/" });
     expect(config.sitemap).toBe("https://docs.openprose.ai/sitemap.xml");
   });
 });
