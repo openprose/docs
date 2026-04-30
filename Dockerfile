@@ -5,7 +5,10 @@ WORKDIR /app
 RUN apk add --no-cache libc6-compat git
 COPY package.json pnpm-lock.yaml .npmrc* ./
 RUN corepack enable && corepack prepare pnpm@latest --activate
-RUN pnpm install --frozen-lockfile
+# --ignore-scripts: postinstall runs fumadocs-mdx which needs source.config.ts.
+# That file is not yet copied into the deps stage. Generate .source/ explicitly
+# in the build stage instead, after COPY . . brings in the source files.
+RUN pnpm install --frozen-lockfile --ignore-scripts
 
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -18,6 +21,7 @@ ARG NEXT_PUBLIC_POSTHOG_KEY
 ENV DOCS_PREVIEW_MODE=$DOCS_PREVIEW_MODE
 ENV NEXT_PUBLIC_POSTHOG_KEY=$NEXT_PUBLIC_POSTHOG_KEY
 ENV NEXT_TELEMETRY_DISABLED=1
+RUN pnpm exec fumadocs-mdx
 RUN pnpm exec next build
 
 FROM node:22-alpine AS run
