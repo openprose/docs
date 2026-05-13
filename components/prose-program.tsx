@@ -20,7 +20,7 @@ export async function ProseProgram({
   const html = await highlightProse(code, { highlightLines });
 
   return (
-    <figure className="prose-program my-6 rounded-xl border border-fd-border overflow-hidden shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_6px_rgba(0,0,0,0.02)]">
+    <figure className="prose-program my-6 rounded-[6px] border border-fd-border overflow-hidden">
       {(title || copy) && (
         <figcaption className="flex items-center justify-between px-4 py-2.5 bg-fd-muted border-b border-fd-border">
           <span className="font-mono text-xs uppercase tracking-[0.08em] text-fd-muted-foreground">

@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className="paper-texture flex flex-col min-h-screen">
+      <body className="op-docs-shell flex flex-col min-h-screen">
         <RootProvider theme={{ enabled: false, defaultTheme: "light" }}>
           <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
             {children}
