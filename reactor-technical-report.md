@@ -207,14 +207,14 @@ public release artifact.
 | Scenario | Row | Provenance | Receipts | Model invocations | Fresh tokens | Reused tokens | Source |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
 | Static `incident-briefing-static-zero` | Reactor | runtime-produced | 4 | 2 | 46 | 46 | Phase C result table |
-| Static `incident-briefing-static-zero` | Reactor no memo | deterministic control | 4 | 4 | 72 | 0 | Phase C result table |
+| Static `incident-briefing-static-zero` | Reactor no memo | deterministic control | 4 | 4 | 92 | 0 | Phase C result table |
 | Static `incident-briefing-static-zero` | Naive loop | non-Reactor control | 0 | 4 | 256 | 0 | Phase C result table |
 | Event-changing `incident-briefing-periodic-surprise` | Reactor | runtime-produced | 4 | 2 | 74 | 74 | Phase C result table |
 | Event-changing `incident-briefing-periodic-surprise` | Reactor no memo | deterministic control | 4 | 4 | 148 | 0 | Phase C result table |
 | Event-changing `incident-briefing-periodic-surprise` | Naive loop | non-Reactor control | 0 | 4 | 148 | 0 | Phase C result table |
 
 In the static scenario, Reactor uses 2 model invocations and 46 fresh tokens,
-compared with 4 invocations and 72 fresh tokens for the no-memo control, and
+compared with 4 invocations and 92 fresh tokens for the no-memo control, and
 4 invocations and 256 fresh tokens for the naive loop. In the event-changing
 scenario, Reactor uses 2 model invocations and 74 fresh tokens, compared with
 4 invocations and 148 fresh tokens for both controls. The event-changing win is
