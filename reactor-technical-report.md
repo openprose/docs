@@ -83,12 +83,22 @@ human interruption policy all need to be explicit.
 ## 4. OpenProse Design
 
 OpenProse treats the responsibility as the program. The source contract names
-the goal, evidence, cadence, criteria, and fulfillment boundary. Source
-compile lowers `*.prose.md` into repository IR when authored intent changes.
-Policy compile lowers the contract plus receipt history into a token-free
-policy artifact when runtime evidence shows the current policy needs revision.
-Those are separate compiles: source-derived language state is not the same
-thing as Reactor runtime state.
+the goal, evidence, freshness referents, memo-breaking conditions, plan-audit
+horizon, observable criteria, and fulfillment boundary. Criteria that cannot
+be observed are expected to produce blocked receipts routed to the author, not
+hidden judgment inside prose. Source compile lowers `*.prose.md` into
+repository IR when authored intent changes. Policy compile lowers the contract
+plus receipt history into a token-free policy artifact when runtime evidence
+shows the current policy needs revision.
+
+Those are separate compiles. The `*.prose.md` contract remains the only
+authored source of meaning. If a policy artifact or projection disagrees with
+the contract, the contract wins; artifacts, receipts, forecasts, and
+projections are derived sibling runtime state. Deterministic code validates,
+schedules, records, and executes artifacts, but it does not author semantic
+judgment. v0.1 demonstrates source compile, cold-start policy artifact
+authorship, and local recompile/rollback substrate; recurring production
+policy recompile remains future work.
 
 Quiescence has three meanings. First, do not act when the maintained state is
 already up to date. Second, do not check now when the forecast says the next
@@ -120,43 +130,24 @@ The current implementation has three cooperating surfaces:
 - The migrated OpenProse CLI path: local `prose compile`, `prose serve`, and
   `prose status` evidence for bundled examples through Reactor receipts.
 
-The built Reactor rows include receipt v0, kernel backstops, policy artifact
-v0, forecast rechecks, evidence-plan validation, memo-hit receipts,
-composition pins, model-authored transitive freshness under a kernel floor,
-owner/subscriber/public projection, filesystem and memory storage adapters,
-record-replay model gateway adapters, local connector and event-sink adapters,
-runtime export/import, cold-start policy authorship, policy recompile and
-rollback substrate, and a shallow judge that requires adapter-owned usage
-metadata for token truth.
+| Surface | v0.1 demonstrated | Not claimed |
+| --- | --- | --- |
+| Runtime spine | receipt v0, kernel backstops, policy artifact validation, memoization, forecast, evidence plans, composition pins, projections, export/import, cold-start authorship, and local recompile/rollback substrate | production gateway, production fulfillment, or production oracle |
+| Judgment | shallow runtime judge with adapter-owned usage metadata, plus K1 live-cassette evaluator evidence | runtime ensemble depth, live provider matrix, or production calibration service |
+| CLI path | local source compile, serve, status, forwarded fulfillment artifacts, crash-window replay, duplicate-trigger dedupe, and projection-tier leak tests | hosted production operation or real external side effects |
+| Storage/adapters | memory, filesystem, record-replay model gateway, local connector, and event-sink adapters | Postgres parity or signer support |
 
-The judge scope is intentionally narrow. v0.1 runtime judging is shallow and
-uses `calibration_grade: "none"` where appropriate. The K1 work proves that an
-offline evaluator can score a live-recorded ensemble cassette with real
-provider metadata. It does not mean the runtime is yet running a live ensemble
-or selecting variable depth per turn.
-
-The local CLI evidence is release-quality for a local path, not a production
-host. Five bundled examples compile real `.prose.md` source, serve triggers
-through Reactor, show per-token surprise attribution in status, and write
-forwarded fulfillment artifacts. The path preserves crash-window replay,
-duplicate-trigger dedupe, and projection-tier leak tests. It still uses local
-deterministic adapters and forwarded fulfillment artifacts rather than hosted
-production ingress or real external side effects.
-
+Cradle is the measurement rig, not a production dependency.
 Production-equivalent ingress would authenticate external events, normalize
 event identities, dedupe and replay event claims, enforce source-specific
-budgets, and hand only typed events and evidence to Reactor. v0.1 has local
-CLI trigger and serve evidence, not a hosted gateway layer.
-
+budgets, and hand only typed events and evidence to Reactor.
 Production-equivalent fulfillment would own idempotent dispatch, retries,
 budgets, external side effects, durable claims, and operator-visible failure
-states. v0.1 writes forwarded fulfillment artifacts through the local CLI
-path, not production actuation.
-
-Production-equivalent oracle support would expose explicit truth and evidence
-sockets for evaluation and operations without smuggling ambient knowledge into
-the runtime. v0.1 uses deterministic Cradle worlds plus one live K1 cassette,
-not a production oracle service.
+states. Production-equivalent oracle support would expose explicit truth and
+evidence sockets for evaluation and operations without smuggling ambient
+knowledge into the runtime. v0.1 has local CLI trigger/serve evidence,
+forwarded fulfillment artifacts, deterministic Cradle worlds, and one live K1
+cassette instead of those production layers.
 
 Postgres parity is deferred because the storage adapter v0 is synchronous
 while real Postgres IO is async. Signer support remains a Phase F binary
@@ -197,6 +188,9 @@ ensemble judging or a full provider matrix.
 
 The result table below is copied from the Phase C result table at
 `../planning/plans/2026-05-19-reactor-runtime-wave/phases/C-baseline-and-second-adapter/results/cost-thesis-baseline.md`.
+During Phase D this report cites local worktree evidence; before publication,
+the K1 cassette and result artifacts must be included in, or linked from, a
+public release artifact.
 
 | Scenario | Row | Provenance | Receipts | Model invocations | Fresh tokens | Reused tokens | Source |
 | --- | --- | --- | ---: | ---: | ---: | ---: | --- |
@@ -206,6 +200,14 @@ The result table below is copied from the Phase C result table at
 | Event-changing `incident-briefing-periodic-surprise` | Reactor | runtime-produced | 4 | 2 | 74 | 74 | Phase C result table |
 | Event-changing `incident-briefing-periodic-surprise` | Reactor no memo | deterministic control | 4 | 4 | 148 | 0 | Phase C result table |
 | Event-changing `incident-briefing-periodic-surprise` | Naive loop | non-Reactor control | 0 | 4 | 148 | 0 | Phase C result table |
+
+In the static scenario, Reactor uses 2 model invocations and 46 fresh tokens,
+compared with 4 invocations and 72 fresh tokens for the no-memo control, and
+4 invocations and 256 fresh tokens for the naive loop. In the event-changing
+scenario, Reactor uses 2 model invocations and 74 fresh tokens, compared with
+4 invocations and 148 fresh tokens for both controls. The event-changing win is
+fresh model work plus reusable-verdict proof, not a total accounted-token
+claim over the no-memo control.
 
 On the static scenario, Reactor performs fresh model work at bootstrap and at
 the plan-age audit, while evidence-age rechecks hit memoized verdicts. The
@@ -219,36 +221,17 @@ in the Phase C result table. The Reactor row spends fresh work on bootstrap
 and on that material change, then reuses verdict work on evidence-age
 rechecks. The controls re-spend on the same schedule.
 
-The B5 live K1 cassette is
-`../../prose-reactor-build/packages/reactor-cradle/src/spikes/fixtures/k1-live-recorded.json`.
-Its SHA-256 digest is
-`f64484990635a61a3dcac973a96e97d6433a576ccc297c23742d4a515e2c1868`.
-The cassette records an OpenRouter run started at
-`2026-05-20T17:55:02.467Z` and completed at
-`2026-05-20T17:55:10.106Z`, with a `2.00 USD` cap and `0.00022823 USD`
-actual spend. It includes Google/Gemini
-`google/gemini-3.1-flash-lite-preview`, Mistral
-`mistralai/mistral-small-3.2-24b-instruct`, and Qwen
-`qwen/qwen-2.5-72b-instruct` outputs, with real request ids, response ids,
-latencies, finish reasons, usage, and spend metadata.
-The K1 evaluator accepts that fixture with `output_count = 3`, diversity
-floor met across those families/providers, `issue_count = 0`, and
-`calibrated_confidence = 1`.
+Supporting evidence:
 
-Recorded provider parity is also part of the accepted Phase C evidence. Two
-recorded provider/model paths produce byte-identical policy artifact bytes
-from the same contract and history, and provider drift fails closed. This is
-recorded policy-artifact parity, not live provider support or model quality
-parity.
+| Evidence | Observed | Boundary |
+| --- | --- | --- |
+| B5 live K1 cassette at `../../prose-reactor-build/packages/reactor-cradle/src/spikes/fixtures/k1-live-recorded.json` | SHA-256 `f64484990635a61a3dcac973a96e97d6433a576ccc297c23742d4a515e2c1868`; OpenRouter run with `output_count = 3` across Google/Gemini, Mistral, and Qwen; `0.00022823 USD` spend under the `2.00 USD` cap; for this authored-anchor cassette, the evaluator returned status `calibrated` and `calibrated_confidence = 1` | evaluator and metadata evidence, not a runtime ensemble, production calibration bar, or general accuracy result |
+| Recorded provider parity | two recorded provider/model paths produce byte-identical policy artifact bytes from the same contract/history, and provider drift fails closed | recorded policy-artifact parity, not live provider support or model quality parity |
+| Phase E CLI acceptance at `../planning/plans/2026-05-19-reactor-runtime-wave/phases/E-cli-migration/SIGNPOST.md` | five bundled examples compile from source, run spawned `prose serve`, ingest triggers through Reactor, write forwarded fulfillment artifacts, and render `prose status` with `surprise_cause=real-input`; crash-window restart and duplicate-trigger dedupe are scripted; projection tiers are leak-tested | local deterministic CLI evidence, not hosted production operation, live-model fulfillment content, npm launch, or stranger quickstart |
 
-The Phase E CLI evidence is local but important. Five bundled examples compile
-from source, start spawned `prose serve`, ingest triggers through Reactor,
-write forwarded fulfillment artifacts, and render `prose status` with provider
-and model labels plus `surprise_cause=real-input`, fresh token counts, reused
-token counts, and receipt-derived pressure. Crash-window restart converges
-from durable pressure within one cycle, duplicate triggers in one cycle
-produce exactly one dispatch, and public/subscriber projections do not leak
-owner-only secret-shaped receipt material.
+The Phase C result table's `## Reproduce` section records the sharpest local
+commands: `pnpm --filter @openprose/reactor-cradle test` and
+`pnpm --filter @openprose/reactor test` from `/Users/sl/code/prose-reactor-build`.
 
 ## 8. Case Study: Incident Briefing Room
 
@@ -260,19 +243,19 @@ Its criteria include impact, timeline, owner, next action, and
 customer-facing status. Its fulfillment boundary is to summarize new facts,
 ask for missing owner input, and update the briefing.
 
-In the static scenario, the first receipt pays fresh work to inspect evidence
-and record the current briefing state. The next evidence-age recheck reuses
-the prior verdict because the evidence identity has not changed. A later
-plan-age audit pays a small fresh floor to make sure the compiled evidence
-plan itself is still adequate. A final evidence-age recheck again reuses
-work. That is the quiet-world shape: not free, but much cheaper than reasking
-the whole question on every clock tick.
+One deterministic Cradle receipt trail shows the shape:
 
-In the event-changing scenario, the world introduces an `incident-opened`
-event. The evidence hash changes, so the Reactor spends fresh work and records
-the new state. The following evidence-age recheck can reuse that updated
-verdict. The user-visible projection can show the current status, why it
-changed, the next forecast recheck, and the receipt trail supporting it.
+| Beat | Cause | Evidence note | Fresh/reused | Decision shape | User-visible result |
+| --- | --- | --- | ---: | --- | --- |
+| `2026-05-18T12:00:00.000Z` | `real-input` | initial incident feed | `37/0` | fresh judge receipt | baseline briefing state recorded |
+| `2026-05-18T12:15:00.000Z` | `forecast-recheck` / `evidence-age` | evidence unchanged | `0/37` | memo-hit receipt | no material change; next recheck remains visible |
+| `2026-05-18T12:30:00.000Z` | `real-input` | `incident-opened`; evidence hash `sha256:a890c5e45abb3e746857db1ca9f79905c17f4f769fbe273446fe186e5787aeb8` | `37/0` | fresh judge receipt | briefing changes because an incident opened |
+| `2026-05-18T12:45:00.000Z` | `forecast-recheck` / `evidence-age` | changed evidence unchanged since prior turn | `0/37` | memo-hit receipt | updated verdict is reused instead of asking again |
+
+The quiet-world static run has the same proof shape with one extra plan-age
+audit floor: bootstrap fresh, evidence-age memo hit, plan-age audit fresh
+floor, and final evidence-age memo hit. That is not free; it is lower fresh
+model work than reasking on every scheduled turn.
 
 The case study stays deliberately local. The CLI can write forwarded
 fulfillment artifacts for bundled examples, but this report does not claim a
