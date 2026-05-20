@@ -10,8 +10,14 @@ under deterministic Cradle scenarios, a Reactor runtime can maintain a
 long-lived responsibility with runtime-produced receipts, reusable verdict
 proof, forecast-paced rechecks, and explicit surprise attribution. It does not
 yet support a public launch claim, hosted production operation, runtime
-variable-depth ensemble judging, npm provenance publication, or stranger
-quickstart verification.
+variable-depth ensemble judging, actual npm publication, or stranger
+quickstart verification. Since the first report draft, the local release
+surface has also become concrete: a packed-tarball flat-tokens example reads
+runtime-produced receipts and reports `46:46`; the deterministic
+`incident-briefing-room` CLI quickstart shows owner and public status
+attribution with `surprise_cause=real-input`; and the `v*` tag gate is wired
+to publish smoked Reactor and Cradle tarballs with provenance, though no npm
+publication has been observed.
 
 ## 1. Problem
 
@@ -120,7 +126,7 @@ supports audit, replay, composition, privacy projection, and exit.
 
 ## 5. Implementation
 
-The current implementation has three cooperating surfaces:
+The current implementation has four cooperating surfaces:
 
 - `@openprose/reactor`: the runtime spine, receipt schema, policy artifact
   validation, memoization, forecast, evidence plans, composition,
@@ -129,6 +135,10 @@ The current implementation has three cooperating surfaces:
   baselines, K1/K2 spikes, release-parity fixtures, and measurement harnesses.
 - The migrated OpenProse CLI path: local `prose compile`, `prose serve`, and
   `prose status` evidence for bundled examples through Reactor receipts.
+- The local release surface: a packed-tarball flat-tokens example, a
+  deterministic CLI quickstart, and a `v*` tag workflow that downloads the
+  exact smoked Reactor and Cradle tarballs and runs provenance-enabled
+  `npm publish` for those tarballs.
 
 | Surface | v0.1 demonstrated | Not claimed |
 | --- | --- | --- |
@@ -136,6 +146,7 @@ The current implementation has three cooperating surfaces:
 | Judgment | shallow runtime judge with adapter-owned usage metadata, plus K1 live-cassette evaluator evidence | runtime ensemble depth, live provider matrix, or production calibration service |
 | CLI path | local source compile, serve, status, forwarded fulfillment artifacts, crash-window replay, duplicate-trigger dedupe, and projection-tier leak tests | hosted production operation or real external side effects |
 | Storage/adapters | memory, filesystem, record-replay model gateway, local connector, and event-sink adapters | Postgres parity or signer support |
+| Release surface | packed-tarball flat-tokens smoke, deterministic `incident-briefing-room` quickstart, and tag-gated provenance publish workflow | public npm availability, stranger run, or production operation |
 
 Cradle is the measurement rig, not a production dependency.
 Production-equivalent ingress would authenticate external events, normalize
@@ -150,9 +161,10 @@ forwarded fulfillment artifacts, deterministic Cradle worlds, and one live K1
 cassette instead of those production layers.
 
 Postgres parity is deferred because the storage adapter v0 is synchronous
-while real Postgres IO is async. Signer support remains a Phase F binary
-decision: ship one concrete signer adapter or make null-signer the only clean
-non-throwing v0.1 state.
+while real Postgres IO is async. Signer support is honestly deferred: v0.1
+normalizes omitted signers to
+`{scheme:"none", null_reason:"no-signer-adapter-configured"}`, and non-null
+receipt signatures fail closed rather than implying cryptographic support.
 
 ## 6. Evaluation Methodology
 
@@ -228,10 +240,16 @@ Supporting evidence:
 | B5 live K1 cassette at `../../prose-reactor-build/packages/reactor-cradle/src/spikes/fixtures/k1-live-recorded.json` | SHA-256 `f64484990635a61a3dcac973a96e97d6433a576ccc297c23742d4a515e2c1868`; OpenRouter run with `output_count = 3` across Google/Gemini, Mistral, and Qwen; `0.00022823 USD` spend under the `2.00 USD` cap; for this authored-anchor cassette, the evaluator returned status `calibrated` and `calibrated_confidence = 1` | evaluator and metadata evidence, not a runtime ensemble, production calibration bar, or general accuracy result |
 | Recorded provider parity | two recorded provider/model paths produce byte-identical policy artifact bytes from the same contract/history, and provider drift fails closed | recorded policy-artifact parity, not live provider support or model quality parity |
 | Phase E CLI acceptance at `../planning/plans/2026-05-19-reactor-runtime-wave/phases/E-cli-migration/SIGNPOST.md` | five bundled examples compile from source, run spawned `prose serve`, ingest triggers through Reactor, write forwarded fulfillment artifacts, and render `prose status` with `surprise_cause=real-input`; crash-window restart and duplicate-trigger dedupe are scripted; projection tiers are leak-tested | local deterministic CLI evidence, not hosted production operation, live-model fulfillment content, npm launch, or stranger quickstart |
+| Phase F flat-tokens packed-tarball example | installs from packed Reactor and Cradle tarballs, drives four static-world turns through `createReactor().ingest()`, reads the produced receipts, and prints `tokens.fresh = 46`, `tokens.reused = 46`, `tokens.ratio = "46:46"`, `runtime.receipt_count = 4`, and `runtime.model_invocation_count = 2` | local packed-tarball smoke, not public npm install, stranger run, production economics, or a new runtime claim beyond the Phase C receipt evidence |
+| Phase F `incident-briefing-room` quickstart | documents local `prose compile src --harness mock`, manifest activation, deterministic `prose serve`, POST `/incident/events`, `prose status --tier=owner`, and `prose status --tier=public`; the status surface attributes owner and public state with `surprise_cause=real-input` | local deterministic CLI quickstart, not hosted ingress, live-model fulfillment content, public npm launch, or stranger verification |
+| Phase F `v*` publish gate | on `refs/tags/v*`, the workflow waits for CI, downloads the exact smoked package tarballs, and runs `npm publish <tarball> --access public --provenance` for both Reactor and Cradle | workflow path only; actual npm publication and registry-visible provenance attestation remain unobserved |
 
 The Phase C result table's `## Reproduce` section records the sharpest local
 commands: `pnpm --filter @openprose/reactor-cradle test` and
 `pnpm --filter @openprose/reactor test` from `/Users/sl/code/prose-reactor-build`.
+The Phase F local release signpost adds the tarball smoke and CLI quickstart
+checks that turn the same numbers into a release-surface exercise without
+claiming publication.
 
 ## 8. Case Study: Incident Briefing Room
 
@@ -257,6 +275,14 @@ audit floor: bootstrap fresh, evidence-age memo hit, plan-age audit fresh
 floor, and final evidence-age memo hit. That is not free; it is lower fresh
 model work than reasking on every scheduled turn.
 
+Phase F uses this same responsibility as the local CLI quickstart. The
+observed sequence is intentionally plain: compile the bundled source, activate
+the manifest, run deterministic `prose serve`, POST an incident event, then
+compare `prose status --tier=owner` and `prose status --tier=public`. The
+useful observation is owner/public status attribution with
+`surprise_cause=real-input` on a local receipt trail, not a hosted incident
+system.
+
 The case study stays deliberately local. The CLI can write forwarded
 fulfillment artifacts for bundled examples, but this report does not claim a
 production incident system updating real customer communications.
@@ -276,10 +302,13 @@ calibration exit bar remain future work. K1 is live-recorded evaluator
 evidence, not a production calibration service.
 
 Infrastructure launch work remains. The packages have version and provenance
-settings, local tarball and parity evidence, and release-floor surface, but
-public npm publication is not observed in this report. Stranger quickstart
-verification is not observed. Postgres parity is deferred under the async
-storage seam. The signer adapter decision remains open for Phase F.
+settings, local tarball and parity evidence, a flat-tokens packed-tarball
+example that reports `46:46`, and a `v*` tag gate that would publish the exact
+smoked Reactor and Cradle tarballs with provenance. Public npm publication is
+still not observed in this report. Stranger quickstart verification is not
+observed. Postgres parity is deferred under the async storage seam. A concrete
+signer adapter is deferred; null-signer remains the only honest v0.1 receipt
+signature state.
 
 The domain boundaries matter. Some responsibilities have no cheap complete
 hash for "semantically relevant content changed." In those domains the system
@@ -313,10 +342,12 @@ studies, stronger transitive freshness semantics, and learned forecast
 policies. The storage layer should gain async parity rows, including Postgres,
 once the adapter seam supports real async IO.
 
-The release work is concrete: publish `@openprose/reactor` and
-`@openprose/reactor-cradle` with provenance, pin the CLI to the public package,
-publish this report from measured evidence, and run a stranger quickstart
-where the observed token ratio matches the report within tolerance.
+The release work is concrete: run the `v*` tag publish gate under npm auth or
+trusted publishing, verify `@openprose/reactor` and
+`@openprose/reactor-cradle` in the public registry with provenance, pin the CLI
+to the public package, publish this report from measured evidence, and run a
+stranger quickstart where the observed token ratio matches the report within
+tolerance.
 
 Longer term, the policy author can migrate into a first-class OpenProse
 `kind: responsibility` once the Prose VM path is proven. That should not add a
