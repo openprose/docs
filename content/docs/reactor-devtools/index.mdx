@@ -7,7 +7,7 @@ description: A replay-first visualizer for the Reactor -- it reads the append-on
 
 `@openprose/reactor-devtools` is the visualizer for the [`@openprose/reactor`](/reactor) harness. It reads the SDK's **append-only, content-addressed receipt ledger** and animates the DAG the way React DevTools' "highlight updates" animates a component tree: nodes **flash** on render, **dim-pulse** on memo-skip, go **red** on fail, per-facet edges light on propagation, and a **fresh-vs-reused token meter** tracks the thesis -- _cost scales with surprise, not the clock._
 
-The standalone command is `reactor-devtools`.
+The standalone command is `reactor-devtools`. It ships deliberately decoupled from the CLI (no `@openprose/reactor-cli` dependency); folding it in behind a `reactor dev` verb is the intended end-state, with the standalone bin as the interim surface.
 
 <Callout>
 The visualization **is** the audit trail, animated. It reads the same receipts you would audit -- there is no separate telemetry channel, no instrumentation to add, and nothing the reactor does to feed it. A run that already happened is a run you can already replay.

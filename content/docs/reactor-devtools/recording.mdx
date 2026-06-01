@@ -54,7 +54,7 @@ The recorder is data-driven. It reads `<state-dir>/beats.json` -- a director's s
 
 ## The demo corpus
 
-The repository ships six committed, replayable demo state-dirs under `packages/reactor-devtools/fixtures/` -- each a deterministic, zero-key corpus chosen to make one Reactor behavior unmistakable:
+The repository ships seven committed, replayable demo state-dirs under `packages/reactor-devtools/fixtures/` -- each a deterministic, zero-key corpus chosen to make one Reactor behavior unmistakable:
 
 | Fixture | What it shows |
 | --- | --- |
@@ -64,6 +64,7 @@ The repository ships six committed, replayable demo state-dirs under `packages/r
 | `inbox-triage` | Diamond dedup + failure isolation -- five identical newsletters collapse to one render; one malformed email fails red while the digest still ships. |
 | `contract-redline` | Incremental re-summarization -- a single-clause edit re-runs only that section plus the rollup chain; a cosmetic edit memo-skips. |
 | `research-tree` | Structural recursion -- revise one finding three levels deep and only its ancestor path re-synthesizes; sibling branches stay dark. |
+| `masked-relay` | Per-consumer facets + a convergent diamond -- mask lanes light independently per consumer, and scouts/expanders converge into the masker and critics without double-firing. The original standalone fixture (the only one with no authored `beats.json`, so it replays with computed captions). |
 
 Open any of them in the viewer (`reactor-devtools packages/reactor-devtools/fixtures/<id>`), inspect them with `--describe`, or record them with `FIXTURE=<id>`. Each fixture is paired with an invariant test that locks the behavior its video claims, so the demo and the test assert the same thing.
 

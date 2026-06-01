@@ -33,7 +33,7 @@ gateways:
 | --- | --- |
 | `static` | A fixed `items` list. Great for `init`, examples, and tests. |
 | `http` | `GET <url>` (substituting `{cursor}`), with the JSON array becoming arrivals. |
-| `file` | Watch a `dir` of `.json` files. |
+| `file` | Read a `dir` of `.json` files, re-scanned on each gateway poll (a per-poll `readdir`, not a filesystem watcher). |
 
 ### Connector plugins
 

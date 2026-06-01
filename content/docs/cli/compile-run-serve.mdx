@@ -52,7 +52,7 @@ reactor serve [--http <port>] [--concurrency <n>] [--poll-interval <ms>]
 
 ### The durable substrate
 
-The host builds a durable substrate: filesystem receipts under `<state-dir>/receipts` and a filesystem world-model under `<state-dir>/world-models`. The reactor self-mounts and runs a boot cold-miss sweep, so a restart resumes from durable state rather than re-ingesting the backlog.
+The host builds a durable substrate: a flat append-only receipt trail at `<state-dir>/receipts.json` and a filesystem world-model under `<state-dir>/world-models`. The reactor self-mounts and runs a boot cold-miss sweep, so a restart resumes from durable state rather than re-ingesting the backlog. `reactor run` and `reactor trigger` persist to the same flat layout, so any of them produces a state directory you can replay directly with [`reactor-devtools <state-dir>`](/reactor-devtools/quickstart).
 
 ### The continuity loop
 

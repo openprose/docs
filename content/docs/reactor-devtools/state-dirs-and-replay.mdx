@@ -15,8 +15,8 @@ A state directory is what [`reactor run`](/cli/compile-run-serve) and `reactor s
 <state-dir>/
   receipts.json            the append-only, content-addressed receipt ledger (the run)
   world-models/            per-node maintained truth, content-addressed by version
-    <node>/published.json    the current published pointer
-    <node>/versions/*.bin    each truth version (addressed by its @atomic fingerprint)
+    <node-hex>/published.json          current published pointer (<node-hex> = the node id, hex-encoded, so any id is a safe dir name)
+    <node-hex>/versions/sha256_<hash>.bin  each truth version, filename = its @atomic content-address
   compile/
     topology.json          the DAG -- nodes, edges, per-facet subscriptions
     labels.json            (optional) friendly node-id → label map

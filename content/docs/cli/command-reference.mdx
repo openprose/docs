@@ -24,7 +24,7 @@ The "Live?" column marks which commands reach the model surface. Live commands n
 
 | Command | Live? | What it does |
 | --- | --- | --- |
-| `reactor init [dir]` | offline | Scaffold a minimal project: a gateway, a responsibility, `reactor.yml`, and `.gitignore`. Flag: `--force`. |
+| `reactor init [dir]` | offline | Scaffold a minimal project: a gateway, a responsibility, `reactor.yml`, `.gitignore`, and a `README.md`. Flag: `--force`. |
 | `reactor doctor [--live]` | offline (`--live` probes) | Report node, SDK, key/deps, offline mode, sandbox, state-dir, and IR health. `--live` runs one smoke render. |
 | `reactor compile [--force] [--check]` | live (cache hit and `--check` are offline) | Run the compile sessions into the IR cache. `--check` exits non-zero when stale. |
 | `reactor run` | live | Ensure the IR is fresh, boot, drain to quiescence, report, and exit. |
