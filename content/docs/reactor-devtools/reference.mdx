@@ -1,0 +1,100 @@
+---
+title: Reference
+description: The reactor-devtools bin, the read-only HTTP API, the frame shape the SPA consumes, and the importable library surface.
+---
+
+# Reference
+
+## The `reactor-devtools` bin
+
+```text
+reactor-devtools <state-dir> [--port <n>] [--host <h>] [--describe]
+```
+
+| Argument / option | Default | Effect |
+| --- | --- | --- |
+| `<state-dir>` | _(required)_ | A saved Reactor state directory (receipts + `compile/topology.json`). |
+| `-p`, `--port <n>` | `4555` | Port to listen on. Must be an integer. |
+| `--host <h>` | `127.0.0.1` | Host to bind. |
+| `--describe` | -- | Print the headless run summary (per-node + per-frame dispositions, moved-facet diff, cost rollup, chain-verify) and exit. No server, no browser. |
+| `-h`, `--help` | -- | Print usage. |
+
+Exit codes: `0` on `--help` or a successful `--describe`; `1` when `<state-dir>` is missing (usage is printed), when `--port` is not an integer, or on any startup error. The server runs until `SIGINT` / `SIGTERM`, then closes and exits `0`.
+
+If `compile/topology.json` is absent, the viewer falls back to a node-only set derived from the receipts' distinct `node` values (boxes, no edges).
+
+## HTTP API
+
+The server serves the SPA plus a tiny read-only API:
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/state` | The full `ReplaySnapshot` (topology + frames + cost rollup). `GET /api/snapshot` is a kept alias. |
+| `GET /api/node/:id?version=<v>` | The node's world-model at a version (the click-through inspector) via `readVersion`. `version` is a frame's `atomicVersion`. `400` if missing, `404` if no such node/version. |
+| `GET /events` | An SSE seam reserved for future live-attach -- idle (held open) in replay. |
+
+## The frame shape
+
+`GET /api/state` returns a `ReplaySnapshot` carrying `frames: ReceiptFrame[]` in append order (the scrubber index = `frame.index`). Each frame is a pure projection of one receipt:
+
+```ts
+interface ReceiptFrame {
+  index: number;                 // scrubber position (append order)
+  node: string;                  // which node to flash / dim / red
+  status: "rendered" | "skipped" | "failed";
+  wakeSource: "input" | "self" | "external";   // flash hue
+  movedFacets: string[];         // facets that moved vs this node's prior receipt
+  edgesToLight: { producer: string; subscriber: string; facet: string }[];
+                                 // per-facet lanes to light -- only on rendered+moved
+                                 // (skipped/failed light none); strict facet match
+  wokenSubscribers: string[];    // DISTINCT downstreams woken -- diamond single-wake
+  cost: { fresh: number; reused: number; surpriseCause: "input" | "self" | "external" };
+  contentHash: string;           // this receipt's address (inspector chain key)
+  atomicVersion: string;         // = fingerprints["@atomic"]; pass to /api/node?version=
+}
+```
+
+`edgesToLight` and `wokenSubscribers` are derived server-side in `buildSnapshot` from the saved topology and the receipt's moved facets, reusing the SDK's own `propagationTargets`. So the **diamond single-wake** (a subscriber reached by >=2 moved facets of one producer fires exactly once) matches the live reconciler.
+
+## Library
+
+The package is importable directly, so a benchmark front-end or a docs site can embed the renderer without pulling the CLI.
+
+```ts
+import { openStateDir, buildSnapshot, startDevToolsServer } from "@openprose/reactor-devtools";
+
+// 1. Open a saved dir and build the SPA payload (a pure read of the SDK).
+const opened = openStateDir("/path/to/state-dir");
+const snapshot = buildSnapshot(opened);
+
+// 2. Or just serve it.
+const server = await startDevToolsServer({ stateDir: "/path/to/state-dir", port: 4555 });
+console.log(server.url);     // -> http://127.0.0.1:4555/
+// server.snapshot           // the ReplaySnapshot it is serving
+await server.close();        // stop the server
+```
+
+Exported surface:
+
+| Export | What it is |
+| --- | --- |
+| `openStateDir(dir, opts?)` | Open a state-dir → `OpenedStateDir` (ledger session + topology + world-models + labels + beats). |
+| `buildSnapshot(opened)` | Build the `ReplaySnapshot` the SPA consumes (topology + frames + cost rollup). |
+| `startDevToolsServer(opts)` | Boot the `node:http` server → `DevToolsServer` (`url`, `snapshot`, `close()`). |
+| `readTopology`, `openWorldModels`, `readNodeWorldModel`, `versionForFrame`, `verifyReceiptChain` | Lower-level read helpers over the state-dir. |
+| Types | `OpenStateDirOptions`, `OpenedStateDir`, `ReplaySnapshot`, `ReceiptFrame`, `EdgeLight`, `NodeView`, `EdgeView`, `CostRollupView`, `NodeWorldModelView`, `WorldModelFileView`, `DevToolsServer`, `DevToolsServerOptions`. |
+
+The ledger-shaping primitive itself -- `createReplaySession` -- lives in the SDK (`@openprose/reactor/sdk`), not here, so other tools can shape a trail without this package. See [State dirs and replay](/reactor-devtools/state-dirs-and-replay).
+
+## Stack and dependencies
+
+| | |
+| --- | --- |
+| Version | `0.1.0` |
+| Bin | `reactor-devtools` → `dist/cli.js` |
+| Runtime dependency | `@openprose/reactor` only |
+| Server | Node built-in `node:http` (no web framework) |
+| Front-end | Vanilla, no-build SVG SPA (no bundler, no graph library) |
+| Recording (dev) | Playwright (a dev dependency; repo tooling -- see [Recording](/reactor-devtools/recording)) |
+
+The package boundary is the point: the SDK stays zero-dep and headless; every opinionated UI choice is quarantined here, and even here it stays near-zero.

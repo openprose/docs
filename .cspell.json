@@ -75,7 +75,20 @@
     "statefulness",
     "agentically",
     "canonicalizable",
-    "authorable"
+    "authorable",
+    "DevTools",
+    "devtools",
+    "replayable",
+    "sparkline",
+    "scrubber",
+    "monorepo",
+    "Chromium",
+    "Playwright",
+    "ffmpeg",
+    "webm",
+    "dedup",
+    "prev",
+    "dep"
   ],
   "ignoreRegExpList": ["https?://[^\\s)]+", "`[^`]*`"]
 }

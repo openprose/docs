@@ -88,3 +88,7 @@ reactor receipts cost --json
 ```
 
 When a running daemon is bound with `--http`, the same projections are available over HTTP at `/status`, `/cost`, `/topology`, `/receipts`, and `/nodes/<node>`. See [the HTTP surface](/cli/compile-run-serve#the-http-surface).
+
+## Visualizing a run
+
+The receipts, world-models, and topology a state-dir holds are exactly what [Reactor DevTools](/reactor-devtools) replays. Point it at the same directory to watch the run animate -- nodes flashing on render, dim-pulsing on memo-skip, the cost meter spiking on a real change -- or read it headlessly with `reactor-devtools <state-dir> --describe`.

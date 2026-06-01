@@ -1,0 +1,12 @@
+{
+  "title": "Reactor DevTools",
+  "pages": [
+    "index",
+    "quickstart",
+    "state-dirs-and-replay",
+    "the-viewer",
+    "describe",
+    "recording",
+    "reference"
+  ]
+}

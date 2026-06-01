@@ -1,0 +1,89 @@
+---
+title: --describe
+description: The headless, browser-free text summary of a run -- the surface an agent or a CI gate reads to verify a reactor without rendering pixels.
+---
+
+# `--describe`
+
+The viewer is for a human at a browser. `--describe` is for everyone else -- a terminal, an agent, a CI gate. It prints a full text summary of the same replayed run and exits. No server, no browser, no key.
+
+```sh
+reactor-devtools <state-dir> --describe
+```
+
+Because the primary consumer of the Reactor is often an agent, this is a first-class surface, not an afterthought: it is the text an agent reads to sanity-check a run -- or to assert on it -- without watching a video.
+
+## The output
+
+```text
+reactor-devtools --describe
+  state-dir   ./run
+  topology    yes · 14 nodes · 22 edges · acyclic=true
+  receipts    92 frames
+  dispositions rendered=63 · skipped=28 · failed=1
+  wake-cause  external=36 · input=54 · self=2
+
+COST ROLLUP
+  total       fresh=33660 · reused=13160 · reuse=28%
+    input     receipts=54  fresh=30420   reused=11480
+    self      receipts=2   fresh=0       reused=0
+    external  receipts=36  fresh=3240    reused=1680
+  peak fresh  14580 at frame 73 (Concept Clusterer)
+
+PER-NODE
+  Runtime Watch              r=6  s=12 f=0  fresh=3240    chain✓
+  Claude Adapter             r=4  s=0  f=0  fresh=1440    chain✓
+  Codex Adapter              r=4  s=0  f=1  fresh=720     chain✓
+  Session Ledger             r=5  s=7  f=0  fresh=2700    chain✓
+  Concept Clusterer          r=2  s=2  f=0  fresh=19440   chain✓
+  ...
+
+CHAIN-VERIFY  ok -- every node chain is prev-linked & consistent
+
+FRAMES  (frame  node  status  moved[...]  fresh  woke[...])
+  0   Agent FS                   rendered moved[@atomic,claude,codex,...] fresh 0     woke[Runtime Watch]
+  1   Runtime Watch              rendered moved[@atomic,claude,codex,...] fresh 540   woke[Claude Adapter,Codex Adapter,...]
+  8   Session Ledger             rendered moved[@atomic,session:claudeA,session:claudeB,session:codexA] fresh 540  woke[Session Summary [claudeA],...]
+  9   Session Ledger             skipped  moved[--]                       fresh 0    woke[--]
+  ...
+```
+
+## What each block tells you
+
+| Block | What it answers |
+| --- | --- |
+| **header** | How big is the run? Is the topology present and acyclic? How many receipts? |
+| **dispositions** | How much actually re-rendered vs memo-skipped vs failed. A high `skipped` count is a healthy, quiet system. |
+| **wake-cause** | Why nodes woke -- `external` (a signal arrived), `input` (an upstream moved), `self` (the audit floor). |
+| **COST ROLLUP** | Fresh vs reused tokens, the **reuse %**, and the same split by cause. `peak fresh` names the single most expensive frame -- the biggest surprise. |
+| **PER-NODE** | Per node: `r`/`s`/`f` counts, total fresh tokens, and a `chain✓` badge (its receipt chain is `prev`-linked and consistent). |
+| **CHAIN-VERIFY** | The global tamper check -- every node's chain verified against the content-addressed `prev` links. |
+| **FRAMES** | One line per receipt: `frame · node · status · moved[...] · fresh · woke[...]`. The whole timeline, greppable. |
+
+## Reading memoization off the trace
+
+The `FRAMES` block is where "cost scales with surprise" stops being a slogan. In the example above:
+
+```text
+  8   Session Ledger   rendered moved[@atomic,session:claudeA,...] fresh 540  woke[Session Summary ...]
+  9   Session Ledger   skipped  moved[--]                          fresh 0    woke[--]
+  10  Session Ledger   skipped  moved[--]                          fresh 0    woke[--]
+```
+
+Frame 8 renders and wakes its subscribers; frames 9 and 10 are byte-identical re-wakes that **memo-skip at zero fresh cost** and wake nothing. The skip is not a missing log line -- it is a recorded receipt proving the reactor was asked to re-check and correctly decided nothing moved.
+
+## Use it in CI
+
+`--describe` is deterministic, so a state-dir checked into a repo is a fixture you can assert against without a browser or a key. Grep the output to gate behavior -- for example, that a quiet stretch stays free, that exactly one node failed, or that a selective wake stayed selective:
+
+```sh
+reactor-devtools fixtures/contract-redline --describe > out.txt
+
+# a single-section edit must not re-render sibling sections:
+grep -E "Summarize §[0-9]+ +r=1 " out.txt   # untouched summarizers rendered once (cold boot) only
+
+# the chain must verify:
+grep -q "CHAIN-VERIFY  ok" out.txt || exit 1
+```
+
+This is how the demo-suite fixtures lock their invariants (see [Recording](/reactor-devtools/recording)) -- the same trace a reviewer reads is the trace CI asserts on.

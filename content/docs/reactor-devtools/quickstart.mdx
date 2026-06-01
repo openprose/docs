@@ -1,0 +1,91 @@
+---
+title: Quickstart
+description: Get a state directory, open the viewer in a browser, and read the same run headlessly with --describe.
+---
+
+# Quickstart
+
+DevTools replays a saved **state directory**. So the quickstart is two steps: get a state-dir, then look at it -- in a browser, or as text.
+
+## 1. Get a state directory
+
+Any [`reactor run`](/cli/compile-run-serve) or `reactor serve` writes one. Point the reactor at a state-dir and run it to quiescence:
+
+```sh
+reactor run --state-dir ./run
+```
+
+That persists `./run/receipts.json`, `./run/world-models/`, and `./run/compile/topology.json` -- the complete, replayable record of the run. (See [State dirs and replay](/reactor-devtools/state-dirs-and-replay) for the full anatomy.)
+
+You do **not** need a key or a running reactor to replay -- only the saved directory.
+
+## 2. Open the viewer
+
+```sh
+reactor-devtools ./run
+# reactor-devtools: replaying 92 receipt(s) across 14 node(s)
+#   open http://127.0.0.1:4555/
+```
+
+Open the printed URL. You get three coordinated regions:
+
+- the **layered DAG** of the topology on the left,
+- a live **fresh-vs-reused cost meter** and the **ordered receipt timeline** on the right,
+- a **scrubber** along the bottom.
+
+Press **space** to play. Each step animates one receipt: a node flashes when it rendered and something moved, dim-pulses when it memo-skipped, flares red on a failure; the moved facet's edges light and the cost meter ticks. A quiet stretch is dim and flat; a real change is a bright cascade and a cost spike.
+
+| Key | Action |
+| --- | --- |
+| `space` | play / pause |
+| `←` / `→` | step one receipt back / forward |
+| `Home` / `End` | jump to the first / last receipt |
+| click a receipt | jump to it |
+
+Pick the port with `--port` (default `4555`) and the bind host with `--host` (default `127.0.0.1`):
+
+```sh
+reactor-devtools ./run --port 4591
+```
+
+## 3. Read it headlessly with `--describe`
+
+For a terminal -- or an agent, or a CI gate -- `--describe` prints the same run as text and exits, no browser:
+
+```sh
+reactor-devtools ./run --describe
+```
+
+```text
+reactor-devtools --describe
+  state-dir   ./run
+  topology    yes · 14 nodes · 22 edges · acyclic=true
+  receipts    92 frames
+  dispositions rendered=63 · skipped=28 · failed=1
+  wake-cause  external=36 · input=54 · self=2
+
+COST ROLLUP
+  total       fresh=33660 · reused=13160 · reuse=28%
+  ...
+PER-NODE
+  Session Ledger             r=5  s=7  f=0  fresh=2700    chain✓
+  ...
+CHAIN-VERIFY  ok -- every node chain is prev-linked & consistent
+
+FRAMES  (frame  node  status  moved[...]  fresh  woke[...])
+  8   Session Ledger   rendered moved[@atomic,session:claudeA,...] fresh 540  woke[Session Summary ...]
+  9   Session Ledger   skipped  moved[--]                          fresh 0    woke[--]
+  ...
+```
+
+That last block is the whole story in one place: frame 8 renders and wakes its subscribers, frames 9+ are byte-identical re-wakes that memo-skip at zero cost. See [`--describe`](/reactor-devtools/describe) for the full output and how to assert on it.
+
+## Try it on a demo corpus
+
+The repository ships six committed demo state-dirs under `packages/reactor-devtools/fixtures/` -- replayable with no key, no model, no reactor. If you have the repo checked out:
+
+```sh
+reactor-devtools packages/reactor-devtools/fixtures/agent-observatory
+```
+
+`agent-observatory`, `monorepo-ci`, `news-desk`, `inbox-triage`, `contract-redline`, and `research-tree` each demonstrate a different Reactor behavior -- selective wake, dedup, failure isolation, incremental rollup. See [Recording](/reactor-devtools/recording) for what each one shows.
