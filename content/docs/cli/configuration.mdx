@@ -61,8 +61,8 @@ The `sandbox` block is the render threat-model knob.
 | --- | --- | --- |
 | `sandbox.mode` | `none` | `none` runs renders in the SDK's cwd-scoped, bounded shell. `docker` runs each render command in a throwaway, network-disabled container. (A third value, `unix-local`, is accepted by the config parser but is not yet realized -- it currently behaves as `none`.) |
 | `sandbox.shell_timeout_ms` | `300000` | The per-command time bound (300 seconds) for the bounded shell. |
-| `sandbox.image` | (none) | The container image, when `mode: docker`. |
-| `sandbox.network` | (none) | The container network setting, when `mode: docker`. |
+| `sandbox.image` | `node:22-bookworm-slim` | The container image, when `mode: docker`. Falls back to `node:22-bookworm-slim` when unset. |
+| `sandbox.network` | (forced off) | Accepted for forward-compatibility but **not yet honored**: the docker runner currently forces `--network=none` on every render command regardless of this value (network isolation is the threat-model default). |
 
 See [connectors and sandbox](/cli/connectors-and-sandbox) for the full render-isolation behavior, including the Docker-absent fallback.
 

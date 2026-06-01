@@ -86,7 +86,7 @@ On `SIGINT` or `SIGTERM`, the host stops arming new work, drains the in-flight q
 
 A `reactors:` list in `reactor.yml` hosts N isolated reactors, each with its own state directory, substrate, schedule, and cursors. The single-reactor case is just N=1: the host synthesizes one `default` reactor and the HTTP surface omits the `/<name>` prefix.
 
-`--concurrency N` is an across-reactor worker-pool bound. Independent reactors render in parallel up to N.
+`--concurrency N` is an across-reactor worker-pool bound (default `1`). Independent reactors render in parallel up to N; the v1 default of 1 means no cross-reactor parallelism unless you raise it.
 
 Within a single reactor, drains stay strictly serial. At most one drain is in flight per reactor, behind a per-reactor serialization queue, because the SDK's single-flight atomicity requires it.
 
@@ -100,7 +100,7 @@ Within-reactor parallelism is a future enhancement. The current SDK has no withi
 reactor trigger <node> [--data <json>|@file]
 ```
 
-`trigger` fires an external wake at one node. In v1 it is a one-shot mount: it boots a transient reactor over the durable world-model with an ephemeral receipt trail, ingests the named node with a full external wake, drains to quiescence, and reports the dispositions.
+`trigger` fires an external wake at one node. In v1 it is a one-shot mount: it boots a transient reactor over the durable substrate, ingests the named node with a full external wake, drains to quiescence, and reports the dispositions. Like `run` and `serve`, it persists to the same flat `<state-dir>/receipts.json` trail, so the wake it injects is durable and replayable.
 
 `--data` accepts inline JSON or `@path` to a JSON file. The wake itself carries no payload slot, so the parsed data is validated and surfaced in the report. For a running daemon, `POST /trigger/<node>` is the equivalent ingress.
 

@@ -18,9 +18,10 @@ node's `### Continuity`:
 - **input-driven** (the default): an upstream node's receipt. This falls out of
   `### Requires`, so it needs no declaration.
 - **self-driven**: the node's own continuity clock emits a synthetic
-  self-receipt, a tick. The node re-renders and either writes a moved fingerprint
-  (surprise propagates) or an unmoved one (the tick stops there, costing nothing
-  downstream).
+  self-receipt, a tick. The tick is a deterministic, zero-token bridge, not a
+  model render: when a facet's `valid_until` has lapsed it mechanically moves that
+  facet's fingerprint (surprise propagates), and when nothing has lapsed it sleeps
+  until the soonest deadline (the tick stops there, costing nothing downstream).
 - **external-driven**: a gateway turns a webhook, cron, or manual trigger into a
   receipt at the system's edge. This is the gateway case.
 
@@ -48,8 +49,8 @@ to drive its recheck cadence, but the cadence rule stays in `### Continuity` and
 the expiry data stays in the world-model.
 
 ```text
-self-driven tick (a synthetic self-receipt)
-  -> the node re-examines the fact
+self-driven tick (a synthetic self-receipt; deterministic, no model render)
+  -> the clock checks the fact's valid_until
   -> valid_until has lapsed -> the fact's status flips -> the facet fingerprint moves
   -> propagation fires exactly as if an upstream had changed
 ```
