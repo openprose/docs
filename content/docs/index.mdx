@@ -9,6 +9,8 @@ Write a Markdown contract. Your agent reads it, wires the services, runs the sub
 
 Plain prompts are great for one-off work. They get messy when the same process needs roles, handoffs, retries, memory, or a receipt. OpenProse gives that process a contract and lets an agent session execute it as a program.
 
+Two first-class parts make that durable. The Reactor DAG is the engine: it compiles a `.prose` project into a content-addressed graph and runs it so cost scales with surprise. The Reactor CLI is the command-line client that drives that engine and serves it as a durable, cost-observable daemon.
+
 <Cards>
   <Card
     title="Start"
@@ -19,6 +21,16 @@ Plain prompts are great for one-off work. They get messy when the same process n
     title="Think"
     href="/think/contracts-not-prompts"
     description="Understand contracts, services, Forme, the VM, and traces."
+  />
+  <Card
+    title="Reactor DAG"
+    href="/reactor"
+    description="Compile a .prose project into a content-addressed DAG and run it so cost scales with surprise."
+  />
+  <Card
+    title="Reactor CLI"
+    href="/cli/overview"
+    description="Compile a .prose project and serve it as a durable, cost-observable reactor daemon."
   />
   <Card
     title="Use"

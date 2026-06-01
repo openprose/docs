@@ -1,0 +1,113 @@
+---
+title: The Reactor
+description: The execution engine that turns a .prose project into a content-addressed DAG and runs it as a durable, self-maintaining reactor.
+---
+
+# The Reactor
+
+The Reactor is the execution engine for OpenProse.
+
+It takes a `.prose` project, compiles it into a content-addressed graph of
+responsibilities, and runs that graph as a durable reactor that does expensive
+work only when something material has actually changed.
+
+The shape borrows from React. React keeps a DOM consistent with declared
+component state and re-renders only what moved. The Reactor keeps a set of
+maintained truths consistent with the changing world and re-runs only the
+nodes whose inputs moved. Substitute three nouns and the whole design follows.
+
+| React | The Reactor |
+| --- | --- |
+| Component | A responsibility (a declared ideal world-state) |
+| DOM | The world-model (the maintained truth, materialized) |
+| Render function | A bounded agent session that computes the next truth |
+| Props | Subscriptions to other responsibilities |
+| `setState` / re-render | A new signed receipt on a subscription |
+| Reconciler | The reconciler (fingerprint, schedule, commit, propagate) |
+| `React.memo` | Skip the render if subscribed inputs have not moved |
+
+## Two phases: compile, then run
+
+The single most important fact about the Reactor is that it has two phases, and
+intelligence lives in only one of them.
+
+```text
+.prose contracts
+  -> COMPILE  (intelligent sessions, fires on contract change)
+       Forme draws the DAG
+       each node's ### Maintains is frozen into a canonicalizer + validators
+  -> a content-addressed topology DAG + per-node deterministic artifacts
+  -> RUN  (a dumb reconciler, fires on every wake)
+       fingerprint inputs, skip the unchanged, commit, propagate
+```
+
+Compile is where intelligence acts. Sessions read the contracts, resolve which
+node depends on which, and freeze each declaration into deterministic code. Run
+is deliberately dumb: the reconciler compares fingerprints and never asks a
+model "did this change."
+
+This is the binding model of OpenProse, stated for the Reactor: **compile
+freezes intelligent sessions into deterministic artifacts; run is a dumb
+reconciler that executes them.** There is no `.prose` parser and no
+interpreter. A compile step is itself an agent session; the session embodies
+the VM. See [the DAG and compile](/reactor/the-dag-and-compile).
+
+## Cost scales with surprise
+
+Most automation runs on a clock. A job wakes every hour, re-reads the world,
+re-does its work, and sleeps, whether or not anything changed. Cost scales with
+time.
+
+The Reactor inverts that. Before a render runs, the reconciler fingerprints the
+node's subscribed inputs and its own contract. If nothing moved, the render
+does not run; the reconciler writes a cheap `skipped` receipt and spawns no
+session. A thousand-node system costs almost nothing on a quiet day and exactly
+what it should on a loud one.
+
+The honest version of the claim is not "zero cost on a static world." It is
+**cost scales with surprise, plus a forecast-amortized floor** for the
+self-rechecks that catch silent staleness. See
+[world-model and fingerprints](/reactor/world-model-and-fingerprints).
+
+## The one-paragraph mental model
+
+A node declares a standing goal, the shape of the truth it maintains, and what
+it needs from upstream. When the reconciler decides a node should run, it spawns
+one bounded agent session, the render, which reads new evidence, queries the
+prior world-model, writes the updated world-model, and signs a receipt. The
+receipt is the commit; downstream subscribers wake on it. The render writes
+files into its workspace; the harness harvests, promotes, and fingerprints
+them. Quiet nodes stay quiet and free.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="The DAG and compile"
+    href="/reactor/the-dag-and-compile"
+    description="How a .prose project compiles, as sessions, into a topology DAG plus per-node canonicalizers and validators."
+  />
+  <Card
+    title="World-model and fingerprints"
+    href="/reactor/world-model-and-fingerprints"
+    description="The content-addressed maintained truth, the fingerprints of meaning, and facet-granular propagation."
+  />
+  <Card
+    title="The reconciler and receipts"
+    href="/reactor/reconciler-and-receipts"
+    description="The dumb reconciler, the memo key, the signed receipt chain, and render-writes-files."
+  />
+  <Card
+    title="Continuity and ingestion"
+    href="/reactor/continuity-and-ingestion"
+    description="The self-recheck cadence, gateways as external evidence, and idempotency cursors."
+  />
+  <Card
+    title="Case study: Incident Briefing Room"
+    href="/reactor/incident-briefing-room"
+    description="A worked receipt trail showing cost scaling with surprise over four turns."
+  />
+</Cards>
+
+To drive a Reactor from the shell, see the [CLI overview](/cli/overview) and
+the [CLI quickstart](/cli/quickstart).

@@ -1,0 +1,92 @@
+---
+title: "Case study: Incident Briefing Room"
+description: A worked receipt trail showing cost scaling with surprise across a quiet world and a changing one.
+---
+
+# Case study: Incident Briefing Room
+
+The Incident Briefing Room is the clearest Reactor example because its world
+changes over time. The maintained state is not "write a report." It is "the
+incident channel has an accurate current briefing."
+
+Its continuity rule says to recheck on incident messages, on status-page changes,
+and while the incident is active. Its maintained truth covers impact, timeline,
+owner, next action, and customer-facing status. Its fulfillment boundary is to
+summarize new facts, ask for missing owner input, and update the briefing.
+
+This case study mirrors the v0.1 technical report. The numbers below are from
+deterministic measurement worlds, not a hosted production system, and they are
+not dollarized.
+
+## A changing world
+
+When the world changes, the Reactor spends fresh model work on the change and
+reuses prior verdict work on the rechecks in between. One deterministic receipt
+trail shows the shape:
+
+| Beat | Cause | Evidence | Fresh / reused | Receipt | Result |
+| --- | --- | --- | ---: | --- | --- |
+| `12:00` | real input | initial incident feed | `37/0` | fresh | baseline briefing recorded |
+| `12:15` | forecast recheck / evidence age | unchanged | `0/37` | memo hit | no material change |
+| `12:30` | real input | `incident-opened` event | `37/0` | fresh | briefing changes |
+| `12:45` | forecast recheck / evidence age | changed evidence, unchanged since | `0/37` | memo hit | updated verdict reused |
+
+The two fresh beats are the two moments something actually moved: the bootstrap
+and the `incident-opened` event. The rechecks in between hit the memoized
+verdict because the input fingerprint did not move. A naive loop re-spends on
+every scheduled turn whether or not anything changed.
+
+## A quiet world
+
+When nothing changes, the cost is not zero, and the honest claim is precise about
+why. A quiet run has the same proof shape plus one extra plan-age audit floor:
+
+```text
+bootstrap          fresh        (real first render at boot)
+evidence-age tick  memo hit     (nothing moved)
+plan-age audit     fresh floor  (the forecast-amortized recheck)
+evidence-age tick  memo hit     (nothing moved)
+```
+
+That floor is the deliberately-declared forecast cadence: the cost of not letting
+a stale plan become quietly wrong. The cost thesis is **surprise plus a
+forecast-amortized audit floor**, not surprise alone. It is still less fresh
+model work than re-asking on every scheduled turn.
+
+## What the measured rows show
+
+The technical report measures two controlled scenarios against two controls: a
+no-memo Reactor (same schedule, no memoization) and a non-Reactor naive loop
+(rechecks on the same schedule with no receipts or memo keys).
+
+| Scenario | Row | Model invocations | Fresh tokens | Reused tokens |
+| --- | --- | ---: | ---: | ---: |
+| Static | Reactor | 2 | 46 | 46 |
+| Static | Reactor, no memo | 4 | 92 | 0 |
+| Static | Naive loop | 4 | 256 | 0 |
+| Changing | Reactor | 2 | 74 | 74 |
+| Changing | Reactor, no memo | 4 | 148 | 0 |
+| Changing | Naive loop | 4 | 148 | 0 |
+
+In the static scenario the Reactor does fresh work at bootstrap and at the
+plan-age audit, while evidence-age rechecks hit memoized verdicts: 2 invocations
+and 46 fresh tokens against 4 and 256 for the naive loop. In the changing
+scenario the Reactor spends fresh work on the bootstrap and the material change,
+then reuses verdict work on the rechecks: 2 invocations and 74 fresh tokens
+against 4 and 148 for both controls.
+
+The changing-world win is fresh model work plus reusable-verdict proof, not a
+total accounted-token claim over the no-memo control.
+
+## What this does and does not show
+
+This is a deterministic, local demonstration. The Reactor maintains a long-lived
+responsibility with runtime-produced receipts, reusable verdict proof,
+forecast-paced rechecks, and explicit surprise attribution. It is not a hosted
+production incident system updating real customer communications, and the figures
+are measured token accounting, not dollar costs.
+
+To run a project like this from the shell, see the [CLI quickstart](/cli/quickstart).
+For the mechanics behind the trail, see
+[the reconciler and receipts](/reactor/reconciler-and-receipts) and
+[continuity and ingestion](/reactor/continuity-and-ingestion).

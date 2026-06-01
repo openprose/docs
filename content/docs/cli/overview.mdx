@@ -1,0 +1,88 @@
+---
+title: Reactor CLI
+description: The reference command-line client that compiles a .prose project and serves it as a durable, cost-observable daemon.
+---
+
+# Reactor CLI
+
+`@openprose/reactor-cli` is the deterministic command-line driver for the [`@openprose/reactor`](/reactor) SDK. The command is `reactor`.
+
+The CLI does one job: it configures the SDK. It never re-implements the reconciler and it never parses `.prose` itself. Compile freezes intelligence (model sessions) into deterministic, content-addressed artifacts. Run and serve execute those frozen artifacts with a dumb reconciler.
+
+## Install
+
+```sh
+npm install -g @openprose/reactor-cli
+```
+
+Or per-project, alongside the SDK and its peer dependencies:
+
+```sh
+npm install --save-dev @openprose/reactor-cli @openprose/reactor @openai/agents zod
+```
+
+## The reference client: compile, run, serve
+
+The CLI is the reference client for the SDK's three-phase lifecycle.
+
+1. **`compile`** runs the intelligent compile sessions (Forme topology, per-node canonicalizer, postconditions) and freezes them into a content-addressed IR cache under `<state-dir>/compile/`. An unchanged contract set recompiles at zero session cost.
+2. **`run`** ensures the IR is fresh, boots the reactor, drains to quiescence, prints per-node dispositions plus cost, and exits. One-shot.
+3. **`serve`** boots the durable host (filesystem receipts and world-models), runs the continuity driver loop, and exposes an HTTP surface. It stays up until `SIGINT` or `SIGTERM`, then drains in-flight work and exits.
+
+```sh
+reactor init my-project        # scaffold a gateway + responsibility + reactor.yml
+cd my-project
+reactor doctor                 # check node, SDK, key/deps, sandbox, state-dir, IR
+reactor compile                # run the compile sessions -> IR cache
+reactor run                    # boot, drain to quiescence, print dispositions + cost
+reactor serve --http 8080      # boot the durable host + continuity loop + HTTP surface
+```
+
+## Cost scales with surprise
+
+Every receipt carries a `surprise_cause`. A node that re-wakes but whose inputs did not move memo-skips at zero render cost. A node renders, and spends tokens, only when its `(contract_fp, input_fps)` memo key actually moves.
+
+So the standing cost of a quiet system trends to zero, and a cost spike is always a real change propagating. `reactor receipts cost` and `reactor status` roll cost up by `surprise_cause` so you can see exactly what surprised the system. See [observability](/cli/observability) for the details.
+
+## The offline boundary
+
+The default import surface and every model-free command are keyless. Requiring the CLI entrypoint loads neither `@openai/agents` nor `zod`.
+
+`compile`, `run`, `serve`, `trigger`, and the connector and render paths reach the model surface only via a dynamic `import()` inside the handler. They need a live key (`OPENROUTER_API_KEY`) plus the optional peer deps. Every other command, including `doctor`, `init`, and the whole observability suite, runs fully offline, with no key and with the model deps absent.
+
+You can force offline mode on any command with `--offline` (or `REACTOR_OFFLINE=1`).
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Quickstart"
+    href="/cli/quickstart"
+    description="init to compile to run or serve, end to end, with the expected output shape."
+  />
+  <Card
+    title="Configuration"
+    href="/cli/configuration"
+    description="Every reactor.yml key, the environment variables, and the offline flag."
+  />
+  <Card
+    title="Compile, run, serve"
+    href="/cli/compile-run-serve"
+    description="The three core verbs in depth, the compile cache, and the durable daemon."
+  />
+  <Card
+    title="Connectors and sandbox"
+    href="/cli/connectors-and-sandbox"
+    description="Gateways, connectors with idempotency cursors, and the render sandbox."
+  />
+  <Card
+    title="Observability"
+    href="/cli/observability"
+    description="status, inspect, topology, logs, trace, and receipts with chain verification."
+  />
+  <Card
+    title="Command reference"
+    href="/cli/command-reference"
+    description="All twelve commands, their key flags, and the documented exit codes."
+  />
+</Cards>

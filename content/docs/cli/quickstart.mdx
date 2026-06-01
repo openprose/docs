@@ -1,0 +1,105 @@
+---
+title: Quickstart
+description: Scaffold, compile, and run a reactor project end to end.
+---
+
+# Quickstart
+
+This walks the full path: `reactor init` to scaffold a project, `reactor compile` to freeze it, then `reactor run` for a one-shot drain or `reactor serve` for a durable daemon.
+
+## Install
+
+```sh
+npm install -g @openprose/reactor-cli
+```
+
+## Scaffold a project
+
+`reactor init` writes a minimal, compilable project: a gateway, a responsibility that subscribes to it, a `reactor.yml`, a `.gitignore`, and a short README.
+
+```sh
+reactor init my-project
+cd my-project
+```
+
+The scaffold is the smallest end-to-end shape with a real edge. The `inbox` gateway accepts external arrivals and materializes them as a set. The `digest` responsibility subscribes to that set, so when the inbox moves the digest re-renders, and only then.
+
+`init` refuses to overwrite existing files by default. Pass `--force` to clobber a directory that already contains scaffold files.
+
+## Check your environment
+
+`reactor doctor` runs fully offline and reports node version, SDK resolvability, live-key presence (it never prints the key), live-dep presence, the sandbox mode, whether the state directory is writable, and the compiled-IR freshness.
+
+```sh
+reactor doctor
+```
+
+```text
+reactor doctor
+
+  node           v22.3.0 (ok)
+  sdk            @openprose/reactor@1.0.0 (resolved)
+  offline mode   not forced
+  live key       present (OPENROUTER_API_KEY)
+  live dep       @openai/agents: ok
+  live dep       zod: ok
+  sandbox        mode none
+  state dir      /abs/my-project/.reactor (writable)
+  compiled IR    not compiled -- run `reactor compile`
+
+  status: healthy-for-offline
+```
+
+Add `--live` to probe one live smoke render against the real provider.
+
+## Compile
+
+`compile` runs the intelligent compile sessions and freezes them into the content-addressed IR cache. It needs a live key (`OPENROUTER_API_KEY`) plus the `@openai/agents` and `zod` peer deps.
+
+```sh
+reactor compile
+```
+
+An unchanged contract set recompiles at zero session cost because the cache key is content-addressed. To check freshness without compiling (handy in CI), use `--check`, which exits non-zero when the cache is stale.
+
+```sh
+reactor compile --check        # exits 1 right after init, before the first compile
+```
+
+## Inspect the compiled DAG
+
+Once compiled, the offline observability commands work with no key. `topology` prints the resolved DAG.
+
+```sh
+reactor topology               # the compiled DAG (inbox -> digest)
+```
+
+## Run once
+
+`run` ensures the IR is fresh (compiling if stale), boots the reactor, drains to quiescence, prints per-node dispositions plus cost, and exits.
+
+```sh
+reactor run
+reactor status                 # standing compile cost beside the run cost
+```
+
+## Or serve as a daemon
+
+`serve` boots the durable host, runs the continuity loop, and binds the built-in HTTP surface. It stays up until you stop it with Ctrl-C.
+
+```sh
+reactor serve --http 8080
+```
+
+The scaffold's `static` connector ingests the seeded items on the first tick, so the gateway and digest both render. In another shell you can read the trail:
+
+```sh
+reactor receipts list          # the gateway + digest receipts
+reactor receipts cost          # cost rolled up by surprise_cause
+```
+
+## Next steps
+
+- [Configuration](/cli/configuration) covers every `reactor.yml` key.
+- [Compile, run, serve](/cli/compile-run-serve) goes deep on the three core verbs.
+- [Connectors and sandbox](/cli/connectors-and-sandbox) explains gateways and the render sandbox.

@@ -1,0 +1,12 @@
+{
+  "title": "Reactor CLI",
+  "pages": [
+    "overview",
+    "quickstart",
+    "configuration",
+    "compile-run-serve",
+    "connectors-and-sandbox",
+    "observability",
+    "command-reference"
+  ]
+}
