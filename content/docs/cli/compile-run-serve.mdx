@@ -58,7 +58,7 @@ The host builds a durable substrate: a flat append-only receipt trail at `<state
 
 Each tick, the driver polls gateways for ingress, then polls continuity across every reactor, surfaces a live cost line, and sleeps to the cadence ceiling. Gateways poll before continuity each tick so a freshly-staged arrival is visible to the same tick's continuity sweep.
 
-`--poll-interval <ms>` sets the cadence ceiling (default `60000`). The loop sleeps to the soonest armed self-recheck, bounded by this ceiling.
+`--poll-interval <ms>` sets the continuity cadence (default `60000`). In v1 the loop sleeps this fixed interval between ticks. (Sleeping adaptively to the soonest armed self-recheck is deferred along with the default `valid_until` freshness projector -- until that ships, no self-recheck instants are armed, so the loop polls on the flat interval.)
 
 ### The HTTP surface
 
