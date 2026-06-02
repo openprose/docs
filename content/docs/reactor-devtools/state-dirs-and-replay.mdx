@@ -1,0 +1,92 @@
+---
+title: State dirs and replay
+description: What a replayable state directory is, how DevTools re-derives a run from it, and the ReplaySession SDK surface that shapes the ledger.
+---
+
+# State dirs and replay
+
+DevTools never instruments a run. It replays one -- from the durable artifacts the Reactor already writes. This page is the data contract: what a state directory contains, and the SDK surface that turns it into a replay.
+
+## A replayable state directory
+
+A state directory is what [`reactor run`](/cli/compile-run-serve) and `reactor serve` persist. The minimum replayable set is the receipt trail plus the compiled topology:
+
+```text
+<state-dir>/
+  receipts.json            the append-only, content-addressed receipt ledger (the run)
+  world-models/            per-node maintained truth, content-addressed by version
+    <node-hex>/published.json          current published pointer (<node-hex> = the node id, hex-encoded, so any id is a safe dir name)
+    <node-hex>/versions/sha256_<hash>.bin  each truth version, filename = its @atomic content-address
+  compile/
+    topology.json          the DAG -- nodes, edges, per-facet subscriptions
+    labels.json            (optional) friendly node-id → label map
+  beats.json               (optional) an authored beat map for recording / captions
+```
+
+- **`receipts.json`** is the run. Each receipt records one node wake: its disposition (`rendered` / `skipped` / `failed`), its `wake.source`, its per-facet `fingerprints`, its `cost.tokens` (`fresh` / `reused`) and `surprise_cause`, and the `prev` link that chains a node's receipts together.
+- **`world-models/`** holds the maintained truth. A receipt's `@atomic` fingerprint _is_ the content-address of the truth version it produced, so the viewer can fetch the exact world-model a node held at any frame.
+- **`compile/topology.json`** is the graph DevTools draws. If it is absent, the viewer falls back to a node-only set derived from the receipts' distinct `node` values (boxes, no edges).
+- **`labels.json`** and **`beats.json`** are optional presentation data. Without them the viewer is fully generic -- raw node ids, computed captions. With them it shows friendly names and an authored beat narration (see [The viewer](/reactor-devtools/the-viewer) and [Recording](/reactor-devtools/recording)).
+
+<Callout>
+Replay needs **zero** running reactor and **zero** model key. The state directory is the complete record; opening it re-derives the run deterministically. This is the same content-addressed trail you would audit -- see [Reconciler and receipts](/reactor/reconciler-and-receipts).
+</Callout>
+
+## How DevTools reads it
+
+Every read goes through one module (`src/data`), the only place the package touches the SDK. It opens the durable trail with the SDK's filesystem storage adapter, re-derives the ledger, and shapes it with `createReplaySession`:
+
+| Need | SDK surface |
+| --- | --- |
+| Open the durable trail | `createFileSystemStorageAdapter({ directory })` -- `@openprose/reactor` |
+| Re-derive the ledger (= replay) | `new FileSystemReceiptLedger({ storage })` -- `@openprose/reactor/adapters` |
+| Ordering + per-node chain index + moved-facet diff + cost rollup | `createReplaySession({ ledger })` -- `@openprose/reactor` |
+| Topology graph | `<state-dir>/compile/topology.json` (a `TopologyWorldModel`) |
+| Chain / tamper badge | `verifyReceiptChain` -- `@openprose/reactor` |
+| Click-through world-model | `createFileSystemWorldModelStore({ directory }).readVersion(node, version)` where `version === receipt.fingerprints["@atomic"]` |
+
+The viewer re-implements none of this. The moved-facet diff and the diamond single-wake are computed by the SDK's own helpers, so what you see matches what the live reconciler did. Almost everything here lives on the curated `@openprose/reactor` front door (see the [SDK front door](/sdk/front-door)); the one exception is the `FileSystemReceiptLedger` class, which the data module imports from `@openprose/reactor/adapters` (the front door ships the `createFileSystemReceiptLedger` builder for the common case).
+
+## The ReplaySession surface
+
+`createReplaySession` is the SDK half of the data contract -- a tiny, pure-data shaping helper that any tool (the viewer, a benchmark front-end, your own script) can use to read a trail without re-deriving the math. It is exported from the curated `@openprose/reactor` front door, does no I/O, and pulls no new dependency.
+
+```ts
+import { createReplaySession } from "@openprose/reactor";
+
+// Prefer handing in an already-opened ledger (stays filesystem-agnostic):
+const session = createReplaySession({ ledger });
+
+// Or pass a receipt array directly (scenario / benchmark runs that hold the trail):
+const session = createReplaySession({ receipts });
+```
+
+The returned `ReplaySession` exposes the run as shaped, pure data:
+
+| Field | What it is |
+| --- | --- |
+| `receipts` | The ordered trail -- **append order is the replay timeline**. |
+| `chainByNode` | Each node's `prev`-linked receipts, in append order (the inspector chain). |
+| `movedFacetsFor(receipt)` | The facets that moved vs the **same node's previous** receipt (a null prior = cold start = every facet moved). Computed by the exported `movedFacetsBetween` -- not reinvented. |
+| `movedFacetsByIndex` | The same diff, precomputed per receipt and index-aligned with `receipts`. |
+| `costRollup` | The cumulative fresh / reused / `$` rollup, bucketed by `surprise_cause` (`input` / `self` / `external`) plus a grand total. |
+| `verifyNodeChain(node)` | Verifies one node's `prev`-linked chain via `verifyReceiptChain` -- the tamper / consistency badge. |
+
+### The cost rollup
+
+`costRollup` is the data behind the fresh-vs-reused meter. Each bucket carries `{ receipts, fresh, reused, dollars }`; `skipped` and `failed` receipts contribute zero fresh, so a quiet world keeps `total.fresh` flat and a surprise spikes it.
+
+```ts
+const session = createReplaySession({ ledger }, {
+  cost: { freshRate: 0.000002 },   // optional coarse $/token; defaults to 0
+});
+
+session.costRollup.total;          // { receipts, fresh, reused, dollars }
+session.costRollup.byCause.input;  // the same shape, for input-driven wakes
+```
+
+Pricing is opt-in and coarse: `freshRate` and `reusedRate` default to `0`, so the rollup is deterministic and dependency-free unless you supply real rates. `fresh` is the meaningful line -- it is the spend that surprise actually drove.
+
+## Building a snapshot yourself
+
+The DevTools package wraps all of this in `openStateDir` + `buildSnapshot`, which produce the exact `ReplaySnapshot` the SPA consumes (topology + per-receipt frames + the cost rollup). You can call them directly to embed the renderer or to drive your own analysis -- see the [reference](/reactor-devtools/reference).

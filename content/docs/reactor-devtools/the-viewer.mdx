@@ -1,0 +1,77 @@
+---
+title: The viewer
+description: The no-build SPA -- its three regions, the animation language that maps receipts to pulses, the keyboard controls, and the deep-links.
+---
+
+# The viewer
+
+`reactor-devtools <state-dir>` boots a local server and prints a URL. Open it for the viewer: a single, no-build SPA (hand-rolled SVG + CSS animation, no bundler) that renders three coordinated regions, all driven by one `GET /api/state` payload.
+
+## Three regions
+
+- **The layered DAG** (left) -- a longest-path layered layout of the topology, drawn as SVG. Every node referenced by the topology _or_ by an edge endpoint gets a box, so a producer-only ingress still appears (drawn dashed). Entry-point gateways are gold-bordered. Per-facet edges curve with arrowheads -- named-facet lanes dashed, `@atomic` solid. The whole DAG fits the viewport.
+- **The sidebar** (right) -- a live **fresh-vs-reused token meter**, cumulative up to the scrub head and split by `surprise_cause`, with the replay grand total; below it, the **ordered receipt timeline** -- each receipt's index, disposition tick, node, and wake cause, current row highlighted, future rows dimmed, click to jump.
+- **The scrubber** (bottom) -- a transport (jump-to-start, step back, play/pause, step forward, jump-to-end), a speed selector, a seek range, and a readout: `frame i/N · node · status · cause · moved [...]`.
+
+The scrub head marks which node each receipt hit on the graph -- cyan for rendered, grey for skipped, red for failed -- and dims nodes not yet touched in the replay.
+
+## The animation language
+
+Stepping forward fires, per receipt, a **transient, fire-and-forget** pulse -- the cascade. These pulses are layered onto the same DOM as idempotent state, so a backward scrub or a long jump never replays a cascade; only a real forward step or play tick animates. That is what lets a `#frame=N` screenshot be exact and a rewind be silent.
+
+| Receipt | Visual |
+| --- | --- |
+| `rendered` + a moved fingerprint | **Node flash** -- a bright decaying halo + box glow, hued by `wake.source`. The React-DevTools "highlight update." |
+| moved facet _f_ on producer _p_ | **Per-facet edge light** -- the `p → subscriber` lanes for _f_ light to the facet color and a token bead rides the path. _Only the moved facet's lanes light_ -- a subscriber on a different facet stays dark. The selector boundary, made visible. |
+| a move that wakes a downstream | **Woken ring** -- each distinct subscriber the move wakes pulses a ring, staggered just after the producer flash so propagation reads as a cascade. A subscriber reached by >=2 moved facets fires **once** (the diamond single-wake). |
+| `skipped` | **Dim grey ripple** -- a faint grey halo breathes once, no glow, no edges. The "correctly did nothing" shot. (A `rendered` self-tick that moved nothing gets this same dim pulse.) |
+| `failed` | **Red flare** -- a red halo + box flare; prior truth stands, no edges light. |
+| `cost.tokens.fresh` / `reused` + `surprise_cause` | **Cost sparkline tick** -- fresh tokens per receipt, colored by cause, over a faint reused underlay. Flat near zero on a quiet stretch, a tall spike on a surprise. |
+
+### Wake-source hues
+
+The flash color tells you _why_ a node woke, straight from `wake.source`:
+
+| `wake.source` | Hue | Meaning |
+| --- | --- | --- |
+| `input` | cyan | An upstream subscription moved. |
+| `self` | violet | A self-wake (the audit floor -- a re-check that found nothing, or freshness lapse). |
+| `external` | gold | An external signal arrived at a gateway. |
+
+A gold flash at a gateway rippling into cyan flashes downstream is, at a glance, "the outside world changed and the change propagated."
+
+## The hero shot
+
+The frame worth screenshotting is a **selective wake**: one external signal lands, exactly one path lights through the graph, the cost meter ticks once off a flat line, and everything off that path stays dark. It is the whole thesis in a single still -- _the system spent tokens only where something actually changed._ Its inverse is just as legible: a long run of dim grey pulses and a flat cost line is a correct, idle system.
+
+## Controls
+
+| Input | Action |
+| --- | --- |
+| `space` | play / pause |
+| `←` / `→` | step one receipt |
+| `Home` / `End` | jump to first / last |
+| click a receipt row | jump to it |
+| drag the seek bar | scrub |
+| speed selector | `0.5x`-`8x` -- scales the step cadence (~600 ms/receipt at 1x) and the pulse duration |
+
+At fast speeds the pulse duration is capped near the step interval, so play stays crisp instead of smearing.
+
+## Deep-links
+
+The URL carries view state, so you can link a specific moment (handy for screenshots, bug reports, or a launch thread):
+
+| Param | Effect |
+| --- | --- |
+| `#frame=<n>` | park the viewer on receipt _n_ (idempotent -- no cascade replays) |
+| `?autoplay=1` | start playing on load |
+| `?speed=<n>` | set the playback speed |
+
+```text
+http://127.0.0.1:4555/#frame=39          a specific still
+http://127.0.0.1:4555/?autoplay=1&speed=2  the arc, at 2x
+```
+
+## Labels and captions
+
+If the state-dir carries a `compile/labels.json`, the viewer renders friendly node names ("Claude Adapter") instead of raw ids and hides the structural kind prefix -- the renderer itself stays generic. If it carries a `beats.json`, the authored beat captions narrate the run as it plays. Both are optional presentation data; a bare state-dir replays fine without them. See [Recording](/reactor-devtools/recording) for the beat map.

@@ -1,0 +1,111 @@
+---
+title: Configuration
+description: The reactor.yml schema, environment variables, and the global flags every command honors.
+---
+
+# Configuration
+
+`reactor init` writes a fully-commented `reactor.yml` at the project root. Every command reads it from `<project>/reactor.yml`. When the file is absent, the documented defaults apply.
+
+## The reactor.yml schema
+
+```yaml
+state:
+  dir: ./.reactor              # durable state (receipts, world-models, IR cache)
+
+model:
+  provider: openrouter
+  render_model: google/gemini-3.5-flash
+  compile_model: google/gemini-3.5-flash
+  temperature: 0
+  max_turns: 200
+
+sandbox:
+  mode: none                   # none (default) | docker
+  shell_timeout_ms: 300000
+
+gateways:                      # external-driven entry points
+  - node: inbox
+    source_id: inbox
+    connector:
+      type: static             # static | http | file (or a connectors.{cjs,js} plugin)
+      id_field: id
+      items: [{ id: item-1, body: "the first item" }]
+
+reactors: []                   # optional: a multi-reactor host (see below)
+```
+
+## state
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `state.dir` | `./.reactor` | The durable state directory: receipts, world-models, and the compiled IR cache. Resolved to an absolute path rooted at the project dir, so every command agrees on one location regardless of cwd. |
+
+## model
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `model.provider` | `openrouter` | The model provider. |
+| `model.render_model` | `google/gemini-3.5-flash` | The model used for renders at run/serve time. |
+| `model.compile_model` | `google/gemini-3.5-flash` | The model used for the compile sessions. It is part of the IR cache key. |
+| `model.temperature` | `0` | Sampling temperature. |
+| `model.max_turns` | `200` | The per-session turn ceiling. |
+
+The compile model is a component of the content-addressed cache key `(contract-set fingerprint, SDK version, model id)`. Changing it invalidates the cache and forces a recompile.
+
+## sandbox
+
+The `sandbox` block is the render threat-model knob.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `sandbox.mode` | `none` | `none` runs renders in the SDK's cwd-scoped, bounded shell. `docker` runs each render command in a throwaway, network-disabled container. (A third value, `unix-local`, is accepted by the config parser but is not yet realized -- it currently behaves as `none`.) |
+| `sandbox.shell_timeout_ms` | `300000` | The per-command time bound (300 seconds) for the bounded shell. |
+| `sandbox.image` | `node:22-bookworm-slim` | The container image, when `mode: docker`. Falls back to `node:22-bookworm-slim` when unset. |
+| `sandbox.network` | (forced off) | Accepted for forward-compatibility but **not yet honored**: the docker runner currently forces `--network=none` on every render command regardless of this value (network isolation is the threat-model default). |
+
+See [connectors and sandbox](/cli/connectors-and-sandbox) for the full render-isolation behavior, including the Docker-absent fallback.
+
+## gateways
+
+Each `gateways` entry is an external-driven entry point bound to a connector.
+
+| Key | Meaning |
+| --- | --- |
+| `node` | The gateway node id (must match a `kind: gateway` contract). |
+| `source_id` | The connector source id (defaults to the node id). Keys the durable idempotency cursor. |
+| `poll` | An optional poll cadence for the gateway. |
+| `connector` | The connector definition: its `type` plus type-specific fields such as `id_field` and `items`. |
+
+See [connectors and sandbox](/cli/connectors-and-sandbox) for the built-in connector types (`static`, `http`, `file`) and the `connectors.{cjs,js}` plugin shape.
+
+## reactors
+
+A `reactors` list hosts N isolated reactors in one `serve` process. When the list is empty (the default), the project is single-reactor and the top-level `state` and `gateways` are that one reactor.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `name` | `reactor-<index>` | The reactor's name, which becomes its HTTP namespace prefix `/<name>/...`. |
+| `project` | the project dir | The contracts directory for this reactor. |
+| `state_dir` | `<state.dir>/<name>` | This reactor's isolated durable state directory. |
+| `gateways` | `[]` | This reactor's gateways. |
+
+Each entry is isolated: its own contracts directory, state directory, substrate, schedule, and cursors, so one reactor never corrupts another. See [the multi-reactor host](/cli/compile-run-serve) for how `--concurrency` parallelizes across reactors.
+
+## Environment variables
+
+| Variable | Meaning |
+| --- | --- |
+| `OPENROUTER_API_KEY` | The live key for the model surface. Required by `compile`, `run`, `serve`, and `trigger`. Read from the process env first, then a `.env` file discovered from the working directory upward. |
+| `REACTOR_OFFLINE` | Set to `1` (or `true`) to force offline mode. Equivalent to the `--offline` flag. |
+
+## Global flags
+
+These flags are honored by every command and override the file:
+
+| Flag | Meaning |
+| --- | --- |
+| `--state-dir <path>` | Override `state.dir`. |
+| `--project <dir>` | The project directory containing `reactor.yml` (default `.`). |
+| `--json` | Machine-readable JSON output. |
+| `--offline` | Force offline mode (sets `REACTOR_OFFLINE=1`). |

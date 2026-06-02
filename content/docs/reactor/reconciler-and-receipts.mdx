@@ -1,0 +1,119 @@
+---
+title: The reconciler and receipts
+description: The dumb reconciler, the memo key, the signed receipt chain, and render-writes-files with harvest-and-promote.
+---
+
+# The reconciler and receipts
+
+The reconciler is the run phase of the Reactor, and it is deliberately dumb. It
+holds no intelligence. It compares fingerprints, skips the unchanged, schedules
+renders, commits results, and propagates along the edges Forme drew. Everything
+intelligent was frozen at [compile](/reactor/the-dag-and-compile) time; the
+reconciler only executes that frozen output.
+
+## The memo key
+
+Before a render runs, the reconciler checks one key:
+
+```text
+memo key = (contract fingerprint, input fingerprints)
+```
+
+If neither the node's own contract nor any subscribed input has moved since the
+node's last receipt, the reconciler writes a cheap `skipped` receipt and spawns
+nothing. No session, no cost. This is `React.memo` applied to expensive agent
+work, and it is the mechanism behind "cost scales with surprise."
+
+Two facts the wiring must honor or propagation silently fails:
+
+- A facet-emitting producer must mount with the canonicalizer its
+  canonicalizer-session emitted, not a bare atomic canonicalizer. Otherwise the
+  moved facet never appears in the propagation set and the edge never fires.
+- A pure source node memo-skips on a bare self or external re-wake, because its
+  key `(contract fingerprint, [])` never moves. Evidence enters honestly only via
+  a contract-fingerprint bump, a freshness lapse, a staged external arrival, or
+  the first cold-miss render at boot.
+
+## Single-flight, coalescing, failure
+
+These fall out of the primitives; none needs a new subsystem.
+
+- **Single-flight**: a node renders one at a time. A render reads its own prior
+  truth and appends to its own ledger, so two concurrent renders would race.
+- **Coalescing**: wakes that arrive while a render is in flight do not stack into
+  N more renders. They mark the node dirty; when the in-flight render commits, if
+  the node is still dirty it renders once more against the freshly-moved inputs.
+  This is React batching. Five inputs moving mid-render cost one follow-up render,
+  not five.
+- **Failure**: a render that errors or leaves a postcondition unsatisfied commits
+  nothing. The last-good published truth stands. It still writes a `failed`
+  receipt: failures are cheap audit signal, not silence. Downstreams do not wake,
+  because the fingerprint did not move.
+
+So a node's receipts have three statuses, and only one propagates:
+
+```text
+rendered  the truth moved        -> wake the subscribed downstreams
+skipped   nothing changed        -> propagate nothing
+failed    nothing committed      -> prior truth stands, propagate nothing
+```
+
+## The receipt is the commit
+
+The receipt is the single commit object and the unit of the ledger: the wake
+event, the memo-key record, the audit entry, and the trust artifact all in one.
+
+| Field | Meaning |
+| --- | --- |
+| `node` | the node identity (the ledger is node-scoped) |
+| `contract_fingerprint` | which contract version produced this |
+| `wake` | the wake's source (input, self, external) and the waking refs |
+| `input_fingerprints` | the consumed tuple, one per subscribed facet |
+| `fingerprints` | a `facet -> token` map of the published truth (atomic is the reserved whole-truth facet) |
+| `semantic_diff` | render-input context, never a wake signal |
+| `prev` | pointer to the prior receipt, chaining the ledger |
+| `status` | `rendered`, `skipped`, or `failed` |
+| `cost` | token attribution that makes "cost scales with surprise" observable |
+| `sig` | the signature |
+
+A node's receipts accumulate into its **ledger**: the append-only trail that is
+the node's durable memory. The system can be killed and resumed because the
+ledger is the memory. At boot the reactor re-derives each node's last receipt
+from the durable trail, so a restart memo-skips the unchanged nodes instead of
+re-rendering them.
+
+## What "signed" means in v1
+
+The receipt chain is attributable and tamper-evident at the **meaning layer**.
+Each receipt commits to its fingerprints and to its predecessor, so the trail is
+verifiable as a coherent sequence produced by a known node. In v1 this does not
+yet mean a cryptographic byte-hash of canonical bytes; trust rests on the
+fingerprint chain. The cryptographic digest and a real signer are deferred to
+the integrity and composition-pinning milestone.
+
+## Render writes files; the harness promotes
+
+The division of labor at commit time is exact and is part of the binding model.
+
+The **render writes files** into its own workspace. The truth's contents never
+ride the session's final output text. When the render signals `rendered`, the
+**harness harvests** the declared workspace files, **promotes** them into the
+node's published world-model, and **fingerprints** the canonical result with the
+node's compiled canonicalizer.
+
+This is why the render and the reactor share one world-model store: the render's
+workspace write must be visible to the harness harvest in the same render. The
+published artifact is fingerprinted; the workspace is not, and it reaches the
+published truth only through this explicit promote-and-fingerprint commit.
+
+## Propagation
+
+On a `rendered` receipt whose fingerprint moved, the reconciler wakes the
+downstreams subscribed to the moved facets, resolved by reading the topology's
+edges. A `skipped` or `failed` receipt propagates nothing.
+
+The wake event and the fingerprint move are the same mechanism seen two ways: a
+receipt arrived, and a facet fingerprint differs from the one the downstream last
+consumed. That unification is what lets self-rechecks and external triggers ride
+the same propagation path as ordinary upstream changes. See
+[continuity and ingestion](/reactor/continuity-and-ingestion).

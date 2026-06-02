@@ -1,0 +1,195 @@
+---
+title: Contracts
+description: The authored surface of OpenProse -- Markdown contracts, the five kinds, and the load-bearing sections that turn a declaration into a typed, subscribable node.
+---
+
+# Contracts
+
+A contract is the thing you author. It is a Markdown file -- `*.prose.md` --
+with a small YAML frontmatter and a handful of `###` sections. The Markdown,
+with its durable trail, is the public artifact: it can leave for any
+Prose-Complete harness with no lost semantics. The deployment's secrets and
+data stay private.
+
+Authors are co-equal. A human and an agent write contracts the same way, read
+the same sections, and fork or compose each other's work without translation.
+Every section below is designed for both readers from the start.
+
+This page is the authored surface only -- what you write. The runtime that
+*serves* these contracts (fingerprints, memoization, the continuity clock,
+receipts) is the Reactor harness's concern; see
+[the Reactor section](/reactor) for that. Here, intent lives only in the
+contract.
+
+## Frontmatter and identity
+
+A contract opens with YAML frontmatter. Two fields carry weight:
+
+- `kind:` -- which of the five contract kinds this is (below). This is the one
+  field that changes how the file is executed.
+- `name:` -- the human-facing slug.
+
+A third field, `id:`, is a durable identity (a base32 token) minted once by
+tooling and preserved across `name:` and filename renames. You do not
+hand-write `id:`; tooling manages it. `name:` is what you read; `id:` is what
+keys the node's world-model and receipt-ledger state on disk.
+
+## The five kinds
+
+`kind:` selects one of five authored kinds. Each has a different run model.
+
+| Kind | Run model | Purpose |
+| --- | --- | --- |
+| `responsibility` | Served (continuously reconciled) | The headline kind: a mounted DAG node maintaining a standing truth over time. |
+| `function` | Called (one-shot) | A stateless, ephemeral helper. Bind `### Parameters`, run one render, return `### Returns`. No Forme phase, no world-model. |
+| `gateway` | Mounted as external-driven | Sugar for an external-driven responsibility. Compiles into a trigger registration for `reactor serve`; refuses a direct `run`. |
+| `test` | Via the test path | Fixtures plus natural-language assertions against a subject responsibility or function. |
+| `pattern` | Instantiated at compile time | A reusable coordination algorithm, expanded into nodes at compile time. Never directly run. |
+
+There is **no `kind: service`** (it was renamed to `function`) and **no
+`kind: system`** (deleted). Cross-node composition is a Forme-wired
+subscription between responsibilities; intra-node composition is an imperative
+`call` inside one render. There is never an internally-autowired graph kind.
+
+<Callout type="info">
+The headline kind is `responsibility`. The rest of this page teaches its
+load-bearing sections, because those are what make a contract a *typed,
+subscribable node* rather than a bare prompt.
+</Callout>
+
+## The load-bearing sections
+
+Most `###` sections mean exactly what their name says. `### Description` is a
+human summary preserved for readers, not a contract. `### Goal` is the render's
+one-sentence standing intent. These defer to the obvious.
+
+Three sections carry the semantic load of a `responsibility`, and the contract
+must *state* them rather than defer: `### Requires`, `### Maintains`, and
+`### Continuity`.
+
+### `### Maintains` -- the world-model schema (four jobs at once)
+
+`### Maintains` is the schema for the truth this node keeps current. It does
+four jobs in one section:
+
+1. It **types** the maintained truth -- the shape of the world-model the node
+   owns.
+2. It carries the **canonicalization spec** -- which fields are material and
+   how they normalize. This compiles into the node's fingerprint, the cheap
+   content identity the run phase compares.
+3. It declares **facets** (below) -- the named parts of the truth.
+4. It states **postconditions** -- the obligations a render must satisfy
+   before it may commit.
+
+There is no separate judge and no `### Criteria` section. Satisfaction folds
+into `### Maintains`: checked deterministically where it can be written as a
+validator, and self-attested by the render where it is semantic. A render that
+cannot satisfy its postconditions commits nothing -- the prior truth stands,
+and a `failed` receipt records why.
+
+### Facets make subscription structural
+
+A `####` sub-heading inside `### Maintains` declares a **facet** -- a named
+part of the truth. The facet's name is, at once, three things:
+
+- its **fingerprint unit** (the canonicalizer emits one token per facet, plus
+  an always-on atomic token over the whole truth);
+- its **subscription symbol** (a consumer names it in `### Requires`, and the
+  reconciler wakes that consumer only when *that* facet's token moves --
+  `Requires.<facet>` ↔ `Maintains.<facet>`);
+- and its **region** of the world-model.
+
+Declaring no parts is the atomic default -- one truth, one token -- and costs
+nothing. This adds no new grammar: it reuses the heading hierarchy and the
+Requires↔Maintains join. **Structure is subscription.** The way you shape the
+`### Maintains` section *is* the way downstream nodes subscribe to it.
+
+### `### Requires` -- what the node subscribes to
+
+`### Requires` names the upstream facets this node consumes. Forme matches each
+entry to a producer's `### Maintains` facet and draws the subscription edge.
+`### Requires` is the input side of the memo key: the run phase fingerprints
+the node's contract together with its subscribed inputs, and re-renders only
+when one of them moves.
+
+### `### Continuity` -- the wake source
+
+`### Continuity` declares when, beyond a subscribed input changing, a node
+should re-render. It is **not a schedule**. A node is *input-driven* by default
+(it wakes when a subscribed facet moves). `### Continuity` adds one of:
+
+- a *self-driven* cadence -- the truth goes stale on its own. A `valid_until`
+  freshness state lives in the world-model as data; `### Continuity` carries
+  only the *policy* that reads it on a forecast cadence. When a `valid_until`
+  lapses, the harness mechanically moves the facet's fingerprint and wakes the
+  node -- no model call to decide that time has passed.
+- *external-driven* -- marks a `kind: gateway` so an ingress event wakes it.
+
+The author writes these sections. The harness owns the fingerprinting, the
+forecast cadence, the receipts, and the subscription wiring. You declare the
+truth; the runtime decides, deterministically, when it is worth recomputing.
+
+## Functions: the call interface
+
+A `kind: function` does not maintain a world-model and is not part of the DAG.
+It declares a plain call interface instead of the four-jobs schema:
+
+- `### Parameters` -- the inputs bound at call time.
+- `### Returns` -- the return value of its single render.
+
+A lone function has no Forme phase: bind parameters, spawn one render, return
+`### Returns`. It is the stateless, ephemeral helper.
+
+## A contract in full
+
+Here is a real, migrated `responsibility`. Read it top to bottom: the `> `
+description states intent for a human, `### Requires` names the single facet it
+subscribes to, `### Maintains` types the `CountSummary` truth and declares one
+`#### structured` facet with an explicit postcondition, and `### Continuity`
+declares it `input-driven` -- so it wakes only when its `counts` input moves.
+
+<ProseProgram src="vendor/prose-examples/basic-unit-suite/src/count-summary.prose.md" />
+
+And here is the `gateway` that feeds it. A gateway has no `### Requires` (its
+input arrives from outside the graph). Notice how `### Maintains` splits the
+ledger into two `####` facets -- `counts` and `raw_events` -- so a
+metadata-only event moves `raw_events` (waking the auditor) without moving
+`counts` (the summary above stays dark). That split *is* the subscription wiring.
+
+<ProseProgram src="vendor/prose-examples/basic-unit-suite/src/counter-events.prose.md" />
+
+A bare prompt is `any`: it tells an agent what to do once and forgets. A
+contract is a typed function over the world -- a declared truth with a fingerprint,
+named facets others can subscribe to, and postconditions it must satisfy before
+it commits. That is the whole difference, and it is authored entirely in
+Markdown.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="ProseScript"
+    href="/openprose/prosescript"
+    description="The optional imperative pinning layer inside ### Execution, for when declarative defaults are not enough."
+  />
+  <Card
+    title="World-model and fingerprints"
+    href="/reactor/world-model-and-fingerprints"
+    description="How the Reactor harness turns a ### Maintains schema into a canonicalizer, fingerprints of meaning, and facet-granular wakeups."
+  />
+  <Card
+    title="Declare outcomes"
+    href="/openprose/declare-outcomes"
+    description="The paradigm under the contract: why you declare a standing truth instead of a sequence of instructions."
+  />
+  <Card
+    title="Set up a project"
+    href="/openprose/setup"
+    description="Where contracts live on disk, and the ordered path from a keyless proof to a running reactor."
+  />
+</Cards>
+
+For the full language semantics, the authoritative source is the OpenProse
+spec ([01-Language.md](https://github.com/openprose/prose/blob/main/spec/01-Language.md))
+and the loaded `open-prose` SKILL. If the docs and the skill ever disagree,
+trust the skill.

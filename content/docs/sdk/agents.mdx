@@ -1,0 +1,407 @@
+---
+title: The /agents escape hatch
+description: The peer-dep-isolated @openai/agents passthrough -- the layered RenderOptions (Tier A sugar, Tier B verbatim passthrough, Tier C backstop), the RenderBackend injection seam, and the compile-session surface. Every render knob is reachable, with zero capability loss.
+---
+
+# The `/agents` escape hatch
+
+`@openprose/reactor/agents` is the one subpath where the harness gets out of your
+way. Every render and every compile step in Reactor is **one bounded
+`@openai/agents` session**, and this subpath is the named priority of the
+`0.3.0` surface: **every knob that SDK anticipates is reachable**, layered so an
+agent's auto-import sees intent rather than a wall of peers, with **zero
+capability loss** versus driving `@openai/agents` by hand.
+
+It is its own subpath for one honest reason: importing it pulls the optional
+peers (`@openai/agents`, `zod`). The keyless inspection and replay surface
+installs neither, so the escape hatch lives behind a door you only open when you
+mean to. Everything here is side-effect-free at import: the `Agent` and `Runner`
+are constructed lazily inside the render closure, never at module load.
+
+<Callout type="info">
+**TypeScript needs `nodenext` or `bundler` module resolution** to reach this
+subpath. The escape-hatch subpaths (`/agents`, `/adapters`, `/run`,
+`/run/types`, `/internals`) are declared through the package's `"exports"` map,
+which the legacy `"moduleResolution": "node"` resolver does not read. The root
+`@openprose/reactor` import resolves under legacy `node` too; the cliff bites
+only the explicit subpaths, where you are already in a real `tsconfig`.
+</Callout>
+
+## The promise, stated honestly
+
+A wrapper earns trust by being lossless. The old `createAgentRender` exposed only
+a handful of knobs and built the `Agent`/`Runner` internally with hardcoded
+settings, so a consumer who needed anything more had to throw away the **whole**
+render -- losing the harness's instruction composition, the `wm_*` tools, the
+harvest, and the cost capture. That is the lossy wrapper this subpath was
+designed to retire.
+
+The fix is a single `RenderOptions` with three tiers. The harness reserves only
+the four fields it cannot let you touch without breaking the render contract;
+**everything else passes through verbatim.** When the bottom tier is not enough,
+you build the `Agent` and `Runner` yourself -- so there is no ceiling.
+
+## The layered seam
+
+```ts
+import type { RenderOptions } from "@openprose/reactor/agents";
+```
+
+`RenderOptions` is the shared escape hatch. The render config (`AgentRenderConfig`)
+extends it; the facade's `render` option forwards it verbatim to every node; the
+sub-agent primitive and the compile session thread the same fields. Learn it once.
+
+### Tier A -- harness-specific sugar
+
+These are **not** plain `@openai/agents` fields. They are harness knobs that map
+onto the SDK config, and the two decoding sugars (`temperature`, `seed`) **fill
+only the fields you left unset** (precedence, below).
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `provider` | `ModelProvider` | Keep first-class: the scoped-not-global invariant. Defaults to the scoped OpenRouter provider, resolved lazily on first render. |
+| `model` | `string \| Model` | Widened from `string` so you may pass a constructed `Model` instance, not just a provider-resolved id. |
+| `maxTurns` | `number \| null` | The session's turn cap. `null` is the **deliberate unbounded opt-in** -- it bypasses the turn guard. Unset means the high default cap (`200` for a render). |
+| `signal` | `AbortSignal` | Per-run cancellation. Operational, not config, so it earns a top-level home rather than hiding in `runOptions` (where it is reserved). |
+| `temperature` | `number` | Sugar for `agent.modelSettings.temperature`. Defaults `0`. |
+| `seed` | `number` | Sugar for `agent.modelSettings.providerData.seed`. |
+
+### Tier B -- the verbatim `@openai/agents` passthrough
+
+This is the layer that closes the gap. Each field is deep-merged **over** the
+harness's defaults.
+
+| Field | Type | What it carries |
+| --- | --- | --- |
+| `agent` | `AgentPassthrough` | The consumer's `Agent` config, reserved fields removed (below). Home of `modelSettings.*` (reasoning, maxTokens, toolChoice, topP, providerData, ...), `handoffs`, `inputGuardrails` / `outputGuardrails`, `mcpServers` / `mcpConfig`, `toolUseBehavior`, `prompt`, `handoffDescription`, `model`. |
+| `runConfig` | `Partial<RunConfig>` | Runner-**construction** config: `tracingDisabled`, `workflowName`, `traceId`, `groupId`, `traceMetadata`, `modelProvider`, the SDK `sandbox`, `sessionInputCallback`. |
+| `runOptions` | `RunOptionsPassthrough` | The **per-run** options bag -- the ONLY home for `previousResponseId`, `conversationId`, `session`, `sessionInputCallback`, `errorHandlers`. |
+| `extraTools` | `(defaults) => Tool[]` | Receives the built-in `wm_*` / cwd / spawn set and returns the full set. It **concatenates** -- the built-ins are always present, never replaced. |
+| `instructionsSuffix` | `string` | Appended to the composed system prompt (after the SKILL + contract layers). Extend the prompt without dropping to a factory. |
+| `tracing` | `boolean \| TracingConfig` | Re-enable tracing with your own api key, or toggle the per-run `tracingDisabled`. The default backend keeps tracing **disabled per run** (safe egress) -- never via a process-global mutation. |
+
+### Tier C -- the full backstop
+
+When even verbatim passthrough is not enough -- you want a non-`@openai/agents`
+model, or instance-level lifecycle hooks -- you build the instances yourself.
+
+| Field | Type | What it gives you |
+| --- | --- | --- |
+| `agentFactory` | `(spec: RenderAgentSpec) => Agent` | Build the `Agent` from the harness-required pieces. The ONLY place to attach `AgentHooks` (`agent.on(event, ...)` -- hooks are emitters on the instance, not config fields). |
+| `runnerFactory` | `(provider: ModelProvider) => Runner` | Build the `Runner` yourself from the scoped provider. The ONLY place to attach `RunHooks`. |
+
+## Reserved fields are a compile error
+
+The harness owns four `Agent` fields, because they carry the render contract: drop
+them and the harvest, cost capture, or routing silently breaks. Rather than let
+you set one and stomp the render, the type system **removes** them from the
+passthrough.
+
+```ts
+type ReservedAgentFields = "instructions" | "tools" | "outputType" | "name";
+
+// AgentPassthrough = Omit<Partial<AgentConfiguration>, ReservedAgentFields>
+const render: RenderOptions = {
+  agent: {
+    modelSettings: { reasoning: { effort: "high" }, maxTokens: 8000 },
+    // instructions: "..."  // <- COMPILE ERROR: reserved. Use instructionsSuffix.
+    // tools: [...]          // <- COMPILE ERROR: reserved. Use extraTools.
+  },
+};
+```
+
+`instructions` is the composed SKILL + contract prompt -- extend it with
+`instructionsSuffix`. `tools` is the `wm_*` / cwd / spawn set -- extend it with
+`extraTools`. `outputType` is the render's done/failed signal schema. `name` is
+the node id. The `runOptions` passthrough reserves four more for the same reason
+-- `context`, `maxTurns`, `signal`, and `stream` are harness- or Tier-A-owned, so
+they are `Omit`-ed from `RunOptionsPassthrough` (use the Tier-A knobs).
+
+<Callout type="info">
+This is the trust mechanism made mechanical. You cannot accidentally break the
+render contract, because the contract-bearing fields are not in the type. The
+compiler points you at the supported extension (`instructionsSuffix` /
+`extraTools`) instead of letting a silent stomp ship.
+</Callout>
+
+## Precedence
+
+The rule is locked and it is simple:
+
+- **Consumer `agent.*` wins wholesale.** Whatever you set on `agent` is your
+  base; the harness merges its four reserved fields **over** it so the contract
+  can never be broken, and the type system forbids you setting those four at all.
+- **Tier-A sugar fills only what you left unset.** `temperature` and `seed` are
+  folded in only where your `agent.modelSettings` did not already specify them.
+  Set `agent.modelSettings.temperature` and the sugar steps aside.
+- **`extraTools` appends.** The built-in `wm_*` / cwd / spawn set is always
+  present; your tools are added to it.
+
+Concretely, `mergeModelSettings` keeps your `modelSettings.temperature` if you set
+it and otherwise drops in the Tier-A `temperature`; `providerData` is
+shallow-merged so the `seed` sugar coexists with your own `providerData` keys
+(yours win). The harness-owned `name` / `instructions` / `tools` / `outputType`
+always merge last.
+
+## The knob-routing table
+
+Every `@openai/agents` knob has exactly one home. This table is verified against
+the shipped `RenderOptions` type, not a proposal.
+
+| Knob | Reach it via | Tier |
+| --- | --- | --- |
+| `modelSettings.*` (toolChoice, parallelToolCalls, maxTokens, reasoning, topP, penalties, truncation, store, promptCacheRetention, contextManagement, text, providerData, retry) | `agent.modelSettings` | B |
+| `handoffs`, `inputGuardrails`, `outputGuardrails`, `mcpServers`, `mcpConfig`, `toolUseBehavior`, `resetToolChoice`, `prompt`, `handoffDescription`, `model` | `agent` | B |
+| `tracingDisabled`, `workflowName`, `traceId`, `groupId`, `traceMetadata`, `modelProvider`, `sandbox` (SDK), `sessionInputCallback` | `runConfig` | B |
+| `previousResponseId`, `conversationId`, `session`, `errorHandlers` | `runOptions` | B |
+| `tracing` re-enable (`{ apiKey }`) | `tracing` | B |
+| `temperature`, `seed` (sugar) | `temperature` / `seed` | A |
+| `provider`, `model`, `maxTurns` (incl. `null`), `signal` | first-class | A |
+| Instance lifecycle hooks (`AgentHooks.on` / `RunHooks.on`) | `agentFactory` / `runnerFactory` | C |
+| A fully custom `Agent` / `Runner`, or a non-`@openai/agents` backend | `agentFactory` / `runnerFactory`, or `RenderBackend` (below) | C |
+
+<Callout type="warn">
+The passthrough is forward-compatible for **additive** `@openai/agents` field
+additions only. The peer is pinned to a verified `@openai/agents` version, and
+`SharedRunOptions` is a moving surface (it recently grew `errorHandlers` /
+`sessionInputCallback`); `runOptions` tracks it. If a future SDK renames or
+replaces a reserved field, growing the `Omit` set is a breaking change. "New
+versions flow through automatically" is true for additive fields, not
+unconditionally version-proof.
+</Callout>
+
+## Escape-hatch in practice
+
+The facade forwards a `RenderOptions` to every node via its `render` option. This
+is the common path -- one config, applied uniformly.
+
+```ts
+import { reactor } from "@openprose/reactor";
+import type { RenderOptions } from "@openprose/reactor/agents";
+
+const render: RenderOptions = {
+  model: "anthropic/claude-sonnet-4",
+  temperature: 0.2,                                  // Tier-A sugar -- fills modelSettings if unset
+  maxTurns: 24,                                      // null is the deliberate unbounded opt-in
+  agent: { modelSettings: { providerData: { top_p: 0.9 } } },  // Tier-B, wins wholesale
+  runConfig: { workflowName: "nightly-digest" },     // runner-construction config
+  instructionsSuffix: "Prefer terse, sourced claims.",
+};
+
+const { reactor: r } = await reactor("./my-project", { directory: "./state", render });
+await r.ingest("source", { wake: { source: "external", refs: [] } });
+```
+
+A fuller config showing each tier carrying its weight:
+
+```ts
+const render: RenderOptions = {
+  provider: myScopedOpenRouterProvider,              // scoped, never the global default client
+  agent: {                                           // Tier B -- verbatim, wins wholesale
+    modelSettings: {
+      reasoning: { effort: "high" },
+      maxTokens: 8000,
+      toolChoice: "required",
+      providerData: { transforms: ["middle-out"] },
+    },
+    inputGuardrails: [piiGuardrail],
+    handoffs: [escalationAgent],
+    // instructions / tools / outputType / name are Omit-ed -> COMPILE ERROR.
+  },
+  extraTools: (defaults) => [...defaults, mySearchTool],   // append, never replace
+  instructionsSuffix: "\nAlways cite sources inline.",
+  runConfig: { traceMetadata: { env: "prod" } },
+  runOptions: { conversationId: "thread-42", errorHandlers: myErrorHandlers },
+  signal: abortController.signal,
+  tracing: { apiKey: process.env.MY_TRACE_KEY! },
+  maxTurns: null,                                    // deliberate unbounded opt-in, preserved end-to-end
+};
+```
+
+## The `RenderBackend` injection seam
+
+The Tier-C factories let you rebuild the `Agent`/`Runner` while staying inside the
+`@openai/agents` shape. `RenderBackend` goes one level deeper: it lets you replace
+the **entire model session** -- record/replay, a proxy, or a non-`@openai/agents`
+model (Claude, a local model) -- while **reusing** the harness's instruction
+composition, working-dir prep, harvest, and cost mapping.
+
+The port is `@openai/agents`-free: it traffics only in the harness-composed
+request and the structured session output, so a non-SDK backend implements it
+without the peer dep.
+
+```ts
+import type {
+  RenderBackend,
+  RenderSessionRequest,
+  RenderSessionOutput,
+} from "@openprose/reactor/agents";
+
+// One bounded session. The harness hands you the resolved request (composed
+// instructions, resolved model + decoding settings, the built tools, the output
+// schema, the pointer input, the per-render context, the turn cap, the signal)
+// and maps your returned signal + usage into a receipt Cost.
+const recordingBackend: RenderBackend = {
+  async runSession(req: RenderSessionRequest): Promise<RenderSessionOutput> {
+    // ... run your model / replay a fixture using req.instructions, req.tools, ...
+    return {
+      signal: undefined,  // undefined => the harness treats the session as failed
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    };
+  },
+};
+
+const { reactor: r } = await reactor("./my-project", {
+  directory: "./state",
+  adapters: { renderBackend: recordingBackend },
+});
+void r;
+```
+
+`RenderSessionRequest` is exactly what the harness resolved before the model runs
+-- `node`, `instructions`, `model`, `modelSettings`, `tools`, `outputType`,
+`input` (the short pointer run-input), `context`, `maxTurns`, and an optional
+`signal`. Your backend runs one session and returns a `RenderSessionOutput`: the
+structured `signal` (a done/failed signal, or `undefined` -> treated as failed,
+nothing commits) and the token `usage` that becomes the receipt `Cost`.
+
+### The default backend, and what it stopped doing
+
+`createDefaultRenderBackend(config)` is the `@openai/agents` session, lifted
+verbatim out of the historic inline render body. It resolves its provider and
+runner **lazily and once** (a keyless build that never renders never constructs
+them), threads the full Tier-A/B/C escape hatch, and owns the one
+`@openai/agents`-specific addition the port abstracts away -- the
+`spawn_subagent` tool, whose sub-agents inherit the same per-run escape hatch as
+the parent render.
+
+The sub-agent primitive is itself a named export off this subpath:
+`createSpawnSubagentTool(deps: SpawnSubagentDeps): Tool<AgentRenderContext>`
+builds that `spawn_subagent` tool. Recursion is a first-class seam -- `deps.subTools`
+is read at spawn time, so the factory may push the tool onto its own `subTools`
+after building it, letting a sub-agent spawn its own helper, with the same
+`maxTurns`/`Usage` backstop bounding every level. You import it when you assemble a
+render backend by hand instead of taking `createDefaultRenderBackend`.
+
+One behavior changed, and it is a correctness fix worth naming. The default
+backend **no longer calls the process-global `setTracingDisabled(true)`**. That
+mutation stomped a consumer's `runConfig.tracingDisabled = false` and leaked
+across every other `@openai/agents` user in the same process. Tracing is now
+decided **per run** -- still disabled by default (safe egress), but overridable
+through `RenderOptions.tracing` or `runConfig.tracingDisabled`, and scoped to this
+render alone.
+
+### `RenderAgentSpec` -- what a Tier-C `agentFactory` receives
+
+When you supply `agentFactory`, you still must honour the render contract. The
+spec hands you every harness-required piece pre-assembled, so you do not
+reconstruct them:
+
+| Field | Meaning |
+| --- | --- |
+| `name` | the node id (the `Agent.name`) |
+| `instructions` | the composed SKILL + contract prompt (+ any `instructionsSuffix`) |
+| `model` | the model id/instance the render resolved |
+| `modelSettings` | the merged decoding settings (temperature/seed + any `agent.modelSettings`) |
+| `tools` | the built-in render tools + any `extraTools` -- the full tool surface |
+| `outputType` | the render done/failed signal schema |
+| `agent?` | your `agent.*` passthrough, for the factory to fold in itself |
+
+Add anything you like -- guardrails, handoffs, instance hooks via `agent.on(...)`
+-- but dropping a spec field breaks the harvest/cost/commit contract, and at this
+tier you own that risk.
+
+## The compile-session surface
+
+`createAgentRender` is the **run-phase** render. The same `@openai/agents`
+machinery powers the **compile** phase, and it lives on this subpath too. Each
+compile step is itself a SKILL-loaded session over the loaded contract set that
+emits a structured artifact, which the harness then lowers deterministically.
+
+```ts
+import {
+  compileForme,           // -> the topology DAG (ReconcilerTopology)
+  compileCanonicalizer,   // -> a node's run-time canonicalizer
+  compilePostcondition,   // -> a node's commit-gate validators
+  loadContractSet,
+  runCompileSession,
+} from "@openprose/reactor/agents";
+```
+
+The full flow that mounts a project **without hand-authoring**:
+
+1. `loadContractSet(dir)` enumerates and slices the `*.prose.md` set (a dumb file
+   load -- nothing parses `.prose` semantics).
+2. `compileForme(contracts, fingerprints)` runs the Forme session and lowers its
+   decisions into a mountable topology.
+3. Per node, `compileCanonicalizer(node, contracts)` and
+   `compilePostcondition(node, contracts)` freeze the run-time canonicalizers and
+   the commit-gate validators.
+4. Mount the topology + canonicalizers via `mountDag` / `createReactor` and run
+   dumbly.
+
+Each step takes a `CompileStepOptions` -- the same `provider` / `model` /
+`temperature` / `seed` / `maxTurns` knobs **and the same escape hatch** (`agent` /
+`runConfig` / `runOptions` / `signal` / `tracing`) as the render, because a
+compile step is just another bounded session. `runCompileSession` is the runner
+underneath all three; `renderContractSet(contracts)` is the contract-set evidence
+it folds into the session's run input.
+
+<Callout type="info">
+The Determinism boundary holds throughout. The **session** makes the one judgment
+only it can -- semantic match (Forme), materiality (canonicalizer), or
+postcondition mode. The deterministic scaffolding does the rest and produces an
+artifact the dumb run phase executes. A compile that cannot emit its artifact
+throws, and the prior compiled artifact stands.
+</Callout>
+
+## What's here, and what isn't
+
+The honesty that earns trust, on this surface specifically:
+
+- **Lossless is a claim with a backstop.** Tiers A and B cover every knob the SDK
+  anticipates; Tier C and `RenderBackend` guarantee no ceiling. If you find a knob
+  with no home, the `agentFactory` / `runnerFactory` / `RenderBackend` path
+  reaches it.
+- **The working dir is scoped, not sandboxed.** The render's per-node `workspaceRoot`
+  has path-escape guards, but a shell command can still escape `cwd`. This is for
+  trusted, self-authored `.prose` projects; an OS sandbox is deferred.
+- **`maxTurns` is a high explicit cap, not a budget.** The real spend signal is the
+  token `usage` mapped to each receipt's `Cost`. `maxTurns: null` opts out of the
+  cap deliberately.
+- **Forward-compat is additive-only.** The version caveat above is the contract:
+  new SDK fields flow through, reserved-field renames do not.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="The offline boundary (/run)"
+    href="/sdk/run"
+    description="compileProject / runProject -- the model-bearing, dynamic-import-only path the facade reaches, plus the type-only /run/types mirror the CLI drives the handle with."
+  />
+  <Card
+    title="The engine room (/internals)"
+    href="/sdk/internals"
+    description="The reconciler-construction spine and the deep domain shapes for re-hosting the loop by hand -- stable but deep, distinct from this curated escape hatch."
+  />
+  <Card
+    title="Adapters and the substrate"
+    href="/sdk/adapters"
+    description="The other injection boundary -- substrate backends, the gateway-ingress / cursor toolkit, and record/replay -- alongside the RenderBackend seam on this page."
+  />
+  <Card
+    title="World-model and fingerprints"
+    href="/reactor/world-model-and-fingerprints"
+    description="What a render produces and how the harness decides it moved -- the runtime mechanics the escape hatch configures the session for."
+  />
+</Cards>
+
+These docs are orientation. The canonical execution behavior lives in the
+open-source `open-prose` skill in the
+[`openprose/prose`](https://github.com/openprose/prose) repo; if the docs and the
+skill disagree, trust the skill.
+
+---
+
+_The conversation always ends. The responsibility shouldn't have to._

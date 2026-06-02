@@ -1,0 +1,94 @@
+---
+title: Observability
+description: Read the compiled DAG, the receipt trail, and the cost rollup with status, inspect, topology, logs, trace, and receipts.
+---
+
+# Observability
+
+The observability commands are model-free. They open a read-only view over the populated state directory (the durable receipt trail, world-model truth, and cached topology) and print projections. They run fully offline, with no key and with the model deps absent.
+
+A read-only projection exits `0` even over an empty state directory: that is the honest quiet view. The two audit paths, `receipts verify` and `inspect --strict`, exit non-zero on a tampered or broken chain.
+
+## status
+
+```sh
+reactor status
+```
+
+Reports the standing compile cost beside the live run cost, plus the per-node dispositions. This is the at-a-glance answer to "what did this system cost, and what is it doing?"
+
+## topology
+
+```sh
+reactor topology
+```
+
+Prints the compiled DAG: the nodes (each with its wake source) and the resolved edges. It requires a compiled IR; without one it tells you to run `reactor compile` first.
+
+## inspect
+
+```sh
+reactor inspect <node> [--strict]
+```
+
+Inspects a single node: its topology position, its fingerprints, its last receipt, and its chain. A plain `inspect` is a pure read. With `--strict`, the command exits non-zero if the node's receipt chain does not verify, which makes it a CI gate.
+
+## logs
+
+```sh
+reactor logs [--node <node>]
+```
+
+Prints the receipt stream as compact log entries, optionally filtered to one node with `--node`.
+
+## trace
+
+```sh
+reactor trace [<node>]
+```
+
+Traces each node's receipt chain in chain order, from wake to disposition. With no argument it traces every node that has receipts; pass a node id to trace just one.
+
+## receipts
+
+```sh
+reactor receipts [list|verify|cost] [--node <node>]
+```
+
+Audits the receipt trail. The default subcommand is `list`.
+
+| Subcommand | Behavior |
+| --- | --- |
+| `list` | The receipt stream as compact entries (filter with `--node`). |
+| `verify` | Walk the chain and check it. Exits non-zero on a tampered or broken chain. |
+| `cost` | The cost rollup. |
+
+### Chain verification and tamper detection
+
+`receipts verify` is the integrity check. It walks the receipt chain and exits non-zero the moment it finds a break, which is exactly what tampering or corruption looks like. The same chain check backs `inspect --strict`. Both are designed to drop straight into CI:
+
+```sh
+reactor receipts verify        # exit 1 on a broken chain
+reactor inspect digest --strict
+```
+
+## Reading cost
+
+Every receipt carries a `surprise_cause`. `reactor receipts cost` and `reactor status` roll cost up by that cause, so a cost figure is always attributable to a specific change.
+
+Because a node that re-wakes with unmoved inputs memo-skips at zero render cost, the standing cost of a quiet system trends to zero. A spike therefore means a real change propagated, and the rollup tells you which one. See [cost scales with surprise](/cli/overview#cost-scales-with-surprise) for the model.
+
+## JSON output
+
+Every observability command honors `--json` for machine-readable output, so you can pipe a projection into a script or a dashboard.
+
+```sh
+reactor status --json
+reactor receipts cost --json
+```
+
+When a running daemon is bound with `--http`, the same projections are available over HTTP at `/status`, `/cost`, `/topology`, `/receipts`, and `/nodes/<node>`. See [the HTTP surface](/cli/compile-run-serve#the-http-surface).
+
+## Visualizing a run
+
+The receipts, world-models, and topology a state-dir holds are exactly what [Reactor DevTools](/reactor-devtools) replays. Point it at the same directory to watch the run animate -- nodes flashing on render, dim-pulsing on memo-skip, the cost meter spiking on a real change -- or read it headlessly with `reactor-devtools <state-dir> --describe`.

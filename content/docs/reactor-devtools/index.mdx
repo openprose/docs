@@ -1,0 +1,104 @@
+---
+title: Reactor DevTools
+description: A replay-first visualizer for the Reactor -- it reads the append-only receipt ledger and animates the DAG the way React DevTools animates a component tree.
+---
+
+# Reactor DevTools
+
+`@openprose/reactor-devtools` is the visualizer for the [`@openprose/reactor`](/reactor) harness. It reads the SDK's **append-only, content-addressed receipt ledger** and animates the DAG the way React DevTools' "highlight updates" animates a component tree: nodes **flash** on render, **dim-pulse** on memo-skip, go **red** on fail, per-facet edges light on propagation, and a **fresh-vs-reused token meter** tracks the thesis -- _cost scales with surprise, not the clock._
+
+The standalone command is `reactor-devtools`. It ships deliberately decoupled from the CLI (no `@openprose/reactor-cli` dependency); folding it in behind a `reactor dev` verb is the intended end-state, with the standalone bin as the interim surface.
+
+<Callout>
+The visualization **is** the audit trail, animated. It reads the same receipts you would audit -- there is no separate telemetry channel, no instrumentation to add, and nothing the reactor does to feed it. A run that already happened is a run you can already replay.
+</Callout>
+
+## Replay-first
+
+DevTools is replay-first: you point it at a saved **state directory** and it re-derives the whole run from the durable trail. Replay needs **zero** running reactor and **zero** model key -- the receipts and world-models on disk are the complete record.
+
+```sh
+reactor-devtools <state-dir>
+# reactor-devtools: replaying 92 receipt(s) across 14 node(s)
+#   open http://127.0.0.1:4555/
+```
+
+A state directory is what [`reactor run`](/cli/compile-run-serve) and `reactor serve` already persist: the receipt ledger, the world-models, and the compiled topology. Open it and the run plays back, beat for beat.
+
+## React DevTools for the Reactor
+
+The Reactor borrows its shape from React, and so does its DevTools. If you have used React DevTools' "highlight updates," you understand this in one screen:
+
+| React DevTools | Reactor DevTools |
+| --- | --- |
+| Component tree | The topology DAG (responsibilities + subscriptions) |
+| A component re-renders → highlight flash | A node `rendered` + a moved fingerprint → node flash |
+| A component bailed out of re-render | A node `skipped` (memo hit) → dim grey pulse |
+| Render threw | A node `failed` → red flare; prior truth stands |
+| Props that changed | The moved facets whose edge lanes light |
+| (no equivalent) | The fresh-vs-reused cost meter -- surprise, priced |
+
+The shot React DevTools _can't_ take is the one that matters most here: a node that **correctly did nothing**. A quiet Reactor is a screen full of dim grey pulses and a flat cost line, and that is the point.
+
+## Two ways to read a run
+
+DevTools meets two different readers -- a human at a browser and an agent at a terminal:
+
+- **The viewer** -- `reactor-devtools <state-dir>` boots a local server and a no-build SPA: the layered DAG, a live cost meter, the ordered receipt timeline, and a scrubber that steps the cascade. See [The viewer](/reactor-devtools/the-viewer).
+- **`--describe`** -- a headless, browser-free text dump of the same run: per-node dispositions, the cost rollup, chain-verification, and a one-line-per-frame trace. The surface an agent (or a CI gate) reads to check a run without rendering pixels. See [`--describe`](/reactor-devtools/describe).
+
+## Where it sits in the stack
+
+DevTools is a pure, near-zero-dependency reader. Its only runtime dependency is `@openprose/reactor` itself; every read goes through the SDK's [`createReplaySession`](/reactor-devtools/state-dirs-and-replay) shaping helper -- imported from the package's curated `.` front door -- so the viewer never re-implements the reconciler's moved-facet diff or its propagation. The SDK stays headless and zero-dep; every opinionated UI choice is quarantined in this package.
+
+```text
+@openprose/reactor        the harness -- compiles + runs, writes receipts
+  └─ "@openprose/reactor" : createReplaySession    shapes the ledger into a replay (ordering, moved facets, cost)
+@openprose/reactor-cli    the CLI -- `reactor run` / `serve` persist the state-dir
+@openprose/reactor-devtools   this package -- reads the state-dir, animates it
+```
+
+`createReplaySession` is re-exported from the curated `.` front door, so the import is just `import { createReplaySession } from "@openprose/reactor"` -- no deep subpath. See the [SDK front door](/sdk/front-door) for the full reference.
+
+## Install
+
+```sh
+npm install -g @openprose/reactor-devtools
+```
+
+The package ships the `reactor-devtools` bin and an importable library. Its one runtime dependency is `@openprose/reactor`; the server is built on Node's `node:http` and the front-end is a hand-rolled, no-build SVG SPA. No web framework, no graph library, no bundler.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Quickstart"
+    href="/reactor-devtools/quickstart"
+    description="Get a state-dir, open the viewer, read --describe -- end to end."
+  />
+  <Card
+    title="State dirs and replay"
+    href="/reactor-devtools/state-dirs-and-replay"
+    description="What a replayable state directory is, and the ReplaySession SDK surface that shapes it."
+  />
+  <Card
+    title="The viewer"
+    href="/reactor-devtools/the-viewer"
+    description="The SPA's three regions, the animation language, keyboard controls, and deep-links."
+  />
+  <Card
+    title="--describe"
+    href="/reactor-devtools/describe"
+    description="The headless, agent- and CI-friendly text summary of a run."
+  />
+  <Card
+    title="Recording"
+    href="/reactor-devtools/recording"
+    description="The headless Playwright recorder and the beat map behind the launch videos."
+  />
+  <Card
+    title="Reference"
+    href="/reactor-devtools/reference"
+    description="The bin, the HTTP API, the frame shape, and the library exports."
+  />
+</Cards>

@@ -1,0 +1,158 @@
+---
+title: World-model and fingerprints
+description: The content-addressed maintained truth, the fingerprints of meaning, and facet-granular propagation along edges.
+---
+
+# World-model and fingerprints
+
+The world-model is the maintained truth a node keeps current. It is the
+Reactor's DOM: standing between renders, read by the next render as its prior
+state, and subscribed to by downstream nodes. One node, one world-model.
+
+This page covers what the truth is, how "changed" is decided, and how a change
+in one node reaches exactly the right downstreams.
+
+## The world-model is a content-addressed artifact
+
+The canonical world-model is a single content-addressable artifact, by default a
+small directory of files, with a single file as the degenerate case. It is
+addressed by the fingerprint of its canonical form.
+
+Three forces pin that shape:
+
+- A render reads the prior truth agentically, the way a coding agent pulls a
+  file on demand, so the truth must be legible and navigable, not flattened into
+  a prompt blob.
+- The receipt trail is signed and append-only, so the truth's evolution must be
+  content-addressable and auditable.
+- Memoization needs a cheap "did it move?" check, so the truth must be
+  deterministically serializable.
+
+Anything else (a SQL index for query, a vector index for retrieval, a rendered
+dashboard) is a **derived projection** of that canonical truth, never the truth
+itself.
+
+One discipline matters: the **published** world-model is the fingerprinted
+artifact. The render's private scratch is workspace, never fingerprinted and
+never subscribed to. A node updates its published truth only when something
+semantically material actually changed.
+
+## The schema lives in `### Maintains`
+
+`### Maintains` declares the shape of the world-model. It does four jobs in one
+block:
+
+- A **type**: the fields, including any freshness fields (`valid_until`,
+  `last_corroborated`, `confidence`).
+- A **canonicalization spec**: what equality means for the fingerprint, written
+  as unambiguous natural language.
+- A **subscription surface**: the named facets a downstream may depend on.
+- **Postconditions**: the validators the render must leave the truth satisfying
+  (the folded-in `### Criteria`, not a separate judge beat).
+
+## A fingerprint is a fingerprint of meaning
+
+A fingerprint is a cheaply computed token that changes if and only if the
+semantically-relevant content changed. That invariant is the whole definition.
+How it is computed (a content digest, a high-water timestamp, a revision
+counter) is a swappable detail, the same family as HTTP ETags or file mtimes.
+
+The apparent paradox, a semantic "if and only if" decided deterministically,
+dissolves once you split it across time, exactly as React does:
+
+1. **Compile time** (intelligent, once per contract). The natural-language
+   canonicalization spec is compiled into a deterministic canonicalizer: what is
+   material, what is dropped, how text, sets, and numbers normalize. This is
+   where intelligence decides what counts as a change.
+2. **Render time** (intelligent, per render). The session writes the truth and
+   self-polices its postconditions. It never decides "did this change."
+3. **Wake time** (dumb, every time). The reconciler runs the compiled
+   canonicalizer plus a digest and compares.
+
+So the fingerprint changes if and only if the canonical material content
+changes, and "material" was frozen by intelligence at compile time, not judged
+at wake time. An agent never judges "did this change" at wake time.
+
+The single highest-leverage control here is **material versus immaterial fields**.
+A feed re-polled every three minutes carries a fresh `fetched_at` and new request
+ids every time. Excluding those from the fingerprint is what keeps "cost scales
+with surprise" from silently degrading back into "cost scales with the clock."
+
+## The structured-backing rule
+
+Anything subscribed must have a structured, canonicalizable backing. Free-form
+rendered prose is a derived projection excluded from the fingerprint. Otherwise
+a session re-rendering the same paragraph hashes differently every time and
+falsely re-triggers downstreams. The rule: **fingerprint the structured truth;
+render prose from it.**
+
+## The identity vocabulary
+
+Three fingerprints of meaning are the load-bearing reactive primitives.
+
+| Name | Of what | Answers |
+| --- | --- | --- |
+| contract fingerprint | the node's own contract | which version of the responsibility produced this |
+| input fingerprint | each upstream facet a node subscribes to | did the watched thing change |
+| world-model fingerprint | the node's own published truth (plus one per facet) | the identity downstreams subscribe to |
+
+These chain. A node publishes its world-model fingerprint in its receipt; a
+downstream sees that as one of its input fingerprints. The memoization key is
+`(contract fingerprint, input fingerprints)` and nothing else. No judge, no
+policy artifact.
+
+A cryptographic byte-hash is deliberately deferred for v1. Memoization and
+propagation run entirely on the fingerprints of meaning above. A byte digest's
+only jobs are integrity and cross-party composition-pinning, neither of which the
+reactive core needs to work.
+
+## Facets: atomic always, named parts when they help
+
+Fingerprinting has two layers.
+
+- **Atomic** (mandatory). One token over the whole canonical truth. This is the
+  reconciler's primitive and what a diamond reconverges on: a node reachable by
+  several paths renders once per distinct input-fingerprint tuple, not once per
+  inbound edge. A leaf truth needs only this.
+- **Facets** (optional, schema-declared). Per-part tokens that make propagation
+  finer-grained. A downstream that subscribes to facet *X* does not wake when
+  facet *Y* moves. This is React's selector boundary made authorable.
+
+You declare a facet simply by naming a part: a `####` sub-heading inside
+`### Maintains` is a facet, and its body says which fields are material. The
+name is the fingerprint unit, the subscription symbol, and the world-model
+subtree all at once. Structure is subscription.
+
+```markdown
+### Maintains
+
+A current, corroborated view of each tracked competitor. Each competitor carries
+a stable `name` and a `last_corroborated` field; `fetched_at` and source request
+ids are immaterial everywhere. Postcondition: every competitor cites a source.
+
+#### funding
+Funding events per competitor: round, amount, date. Material: the event set
+(unordered) and each event's round, amount, and date.
+
+#### hiring
+Open-role activity: the department set and the open-role count (exact).
+
+#### product-launches
+Announced or shipped products: the launch set; a ship-date slipping past today
+flips `shipped`, which is material.
+```
+
+A downstream that requires *funding* wakes only when `#### funding`'s fingerprint
+moves, not when hiring or launches move. The shared `name` and `last_corroborated`
+sit outside any part, so they move only the atomic token.
+
+Atomic is the always-on correctness primitive and the free default. Facets are
+the efficiency primitive that keeps fan-out from burning the surprise budget. A
+leaf truth declares none and pays nothing.
+
+A semantic diff ("3 controls went stale, 1 newly accepted") is valuable, but it
+is carried as **render input** in the receipt, never as a wake signal. The wake
+decision is fingerprint-only.
+
+Next: how the [reconciler](/reactor/reconciler-and-receipts) uses these
+fingerprints to skip, commit, and propagate.

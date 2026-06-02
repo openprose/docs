@@ -1,0 +1,178 @@
+---
+title: Command reference
+description: All twelve reactor commands, every flag (including serve --host), and the documented exit codes -- verified against the shipped 0.2.0 binary.
+---
+
+# Command reference
+
+The command is `reactor`. Run `reactor <command> --help` for the full options of any command, and `reactor --version` (or `-v`) for the CLI version.
+
+<Callout type="info">
+`reactor --version` prints the **CLI** version (`0.2.0`), not the SDK version (`@openprose/reactor@0.3.0`). The two packages version independently -- that is expected, not a mismatch.
+</Callout>
+
+The CLI is the reference [driver of the SDK](/sdk): it configures `@openprose/reactor` and never re-implements the reconciler. Everything below is verified against the shipped binary's argument parser, so an agent can treat this page as the contract.
+
+## Global flags
+
+These four flags are honored by **every** command and override `reactor.yml`. Absent flags are omitted rather than set, so they never clobber a config default.
+
+| Flag | Meaning |
+| --- | --- |
+| `--state-dir <path>` | The durable state directory (default `./.reactor`). |
+| `--project <dir>` | The project directory containing `reactor.yml` (default `.`). |
+| `--json` | Machine-readable JSON output. |
+| `--offline` | Force offline mode (sets `REACTOR_OFFLINE=1`). |
+
+## Commands
+
+The "Live?" column marks which commands reach the model surface. Live commands need `OPENROUTER_API_KEY` plus the `@openai/agents` and `zod` peer deps; they reach the model only via a dynamic `import()` inside the handler, so requiring the CLI entrypoint stays keyless. Every other command runs fully offline.
+
+| Command | Live? | What it does |
+| --- | --- | --- |
+| `reactor init [dir]` | offline | Scaffold a minimal `.prose` project (gateway + responsibility) + `reactor.yml`. |
+| `reactor doctor` | offline (`--live` probes) | Report environment health: node, SDK, live key/deps, offline mode, sandbox, state-dir, IR. |
+| `reactor compile` | live (cache hit and `--check` are offline) | Run the compile sessions and refresh the content-addressed IR cache. |
+| `reactor run` | live | Ensure the IR is fresh, boot the reactor, drain to quiescence, and report. |
+| `reactor serve` | live | Boot the durable host (one or many reactors) and run the continuity driver loop. |
+| `reactor trigger <node>` | live | Trigger a node with an external wake (one-shot mount). |
+| `reactor status` | offline | The standing compile cost beside the live run cost and dispositions. |
+| `reactor topology` | offline | Print the compiled DAG: nodes (and wake source) and resolved edges. |
+| `reactor inspect <node>` | offline | A node's topology position, fingerprints, last receipt, and chain. |
+| `reactor logs` | offline | The receipt stream, optionally filtered to one node. |
+| `reactor trace [node]` | offline | Each node's receipt chain: wake to disposition, in chain order. |
+| `reactor receipts [sub]` | offline | Audit the receipt trail: `list` \| `verify` \| `cost` (default `list`). |
+
+## Per-command flags
+
+Each command spreads the four global flags on top of the local flags below.
+
+### `reactor init [dir]`
+
+Scaffold a minimal project: a gateway, a responsibility, `reactor.yml`, `.gitignore`, and a `README.md`. `[dir]` is the target directory (default `.`).
+
+| Flag | Meaning |
+| --- | --- |
+| `--force` | Overwrite existing scaffold files. The default is to refuse rather than clobber. |
+
+### `reactor doctor`
+
+Report environment health: node, SDK, live key/deps, offline mode, and sandbox. Offline by default; only `--live` reaches the model surface.
+
+| Flag | Meaning |
+| --- | --- |
+| `--live` | Additionally probe one live smoke render. Requires a key plus the live peer deps. |
+
+### `reactor compile`
+
+Run the compile phase as sessions and refresh the content-addressed IR cache. A compile against an unchanged contract set is a cache hit at zero session cost (and is offline).
+
+| Flag | Meaning |
+| --- | --- |
+| `--force` | Recompile regardless of cache freshness. |
+| `--check` | Exit non-zero if the cache is stale; do not compile. Offline; intended for CI. |
+
+### `reactor run`
+
+Ensure the IR is fresh, boot the reactor, drain to quiescence, and report. One-shot, no flags beyond the globals.
+
+<Callout type="info">
+A static gateway (no scheduled wake) does not fire on `run`. Bring it up with `serve`, then deliver a wake via `reactor trigger <node>` or an HTTP `POST /trigger/<node>`.
+</Callout>
+
+### `reactor serve`
+
+Boot the durable reactor host (one or many reactors) and run the continuity driver loop. Stays up until `Ctrl-C` (`SIGINT`/`SIGTERM`), then drains in-flight work and exits.
+
+| Flag | Meaning |
+| --- | --- |
+| `--poll-interval <ms>` | Continuity poll cadence ceiling, in milliseconds (default `60000`). |
+| `--concurrency <n>` | Across-reactor worker-pool bound (default `1`). Within-reactor parallelism is a future enhancement. |
+| `--http <port>` | Bind the built-in HTTP server on `<port>` (trigger / status / health / cost). |
+| `--host <addr>` | HTTP bind address (default `127.0.0.1`, loopback only). |
+
+<Callout type="warn">
+The v1 HTTP server has **no auth**. The default `--host 127.0.0.1` is loopback-only by design. Bind `0.0.0.0` only behind a proxy that terminates auth.
+</Callout>
+
+### `reactor trigger <node>`
+
+Trigger a node with an external wake (a one-shot mount, or a `POST` to a running daemon). `<node>` is the node id.
+
+| Flag | Meaning |
+| --- | --- |
+| `--data <json\|@file>` | A JSON payload inline, or `@path` to a JSON file. |
+
+### `reactor inspect <node>`
+
+Inspect a node: its topology position, fingerprints, last receipt, and chain. `<node>` is the node id.
+
+| Flag | Meaning |
+| --- | --- |
+| `--strict` | Exit non-zero if the node's receipt chain does not verify. For CI. |
+
+### `reactor logs`
+
+Print the receipt stream.
+
+| Flag | Meaning |
+| --- | --- |
+| `--node <node>` | Filter the stream to a single node. |
+
+### `reactor trace [node]`
+
+Trace each node's receipt chain (wake to disposition, in chain order). `[node]` traces a single node; the default traces every node with receipts. No flags beyond the globals.
+
+### `reactor receipts [sub]`
+
+Audit the receipt trail. `[sub]` is `list` | `verify` | `cost` (default `list`). `verify` exits non-zero on a broken chain.
+
+| Flag | Meaning |
+| --- | --- |
+| `--node <node>` | Filter to a single node (`list` / `cost`). |
+| `--rate <rate>` | Price the cost rollup: `$/Mtok` (dollars per million tokens, e.g. `3` or `$3/Mtok`) or `<n>tokens-per-dollar` (e.g. `500000tpd`). Fills the dollar column on `cost`. |
+
+<Callout type="info">
+An unknown `receipts` subcommand (for example `receipts verifyy`) is rejected to stderr and exits `2`, rather than silently falling through to `list` -- a trust hazard a CI gate must not inherit.
+</Callout>
+
+### `reactor status` and `reactor topology`
+
+Read-only over the populated state directory; no flags beyond the globals.
+
+## Documented exit codes
+
+The CLI uses stable, documented exit codes so it composes in CI and scripts.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, or healthy. A clean help or version display also exits `0`. |
+| `1` | A reported failure with an actionable message on stderr (an action handler set it): a stale cache (`compile --check`), a broken receipt chain (`receipts verify`, `inspect --strict`), no contracts found, a bad config, an unhealthy environment (`doctor`), a missing live key or dep (`--live`), or a connector or render error. |
+| `2` | A usage error: an unknown command or flag, a missing argument, or an unknown `receipts` subcommand, surfaced by the arg parser. |
+
+Failure modes carry actionable messages. A missing live key points you to set `OPENROUTER_API_KEY`. A `mode: docker` config with no daemon tells you to install or start Docker, or that renders fall back to the bounded shell. A stale cache tells you to run `reactor compile`. Under `--json`, a thrown operational failure mirrors a `{ ok: false, error }` envelope to stdout, so a machine consumer is never left with empty, unparseable output.
+
+## See also
+
+<Cards>
+  <Card
+    title="Compile, run, serve"
+    href="/cli/compile-run-serve"
+    description="The three core verbs in depth, the compile cache, the durable daemon, and its HTTP routes."
+  />
+  <Card
+    title="Quickstart"
+    href="/cli/quickstart"
+    description="init to compile to run or serve, end to end, with the expected output shape."
+  />
+  <Card
+    title="Observability"
+    href="/cli/observability"
+    description="status, topology, inspect, logs, trace, and receipts with chain verification."
+  />
+  <Card
+    title="SDK API reference"
+    href="/sdk"
+    description="The programmatic surface the CLI drives: the facade, the typed handle, and the six entrypoints."
+  />
+</Cards>

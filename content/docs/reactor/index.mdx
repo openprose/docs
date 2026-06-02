@@ -1,0 +1,172 @@
+---
+title: Reactor
+description: The deterministic harness built to run OpenProse contracts -- the recommended fast path. Compile a contract set once, then run it forever, doing expensive model work only when something material moved.
+---
+
+# Reactor: the harness that runs OpenProse
+
+[OpenProse](/openprose) is the foundation: a paradigm where you declare the
+outcomes you want kept true, written as Markdown contracts that run on any
+Prose-Complete agent harness. **Reactor (`@openprose/reactor`) is the harness
+built to run those contracts** -- the deterministic host that compiles, runs,
+and inspects standing responsibilities, keeps the world-model up to date, and
+leaves a receipt behind every decision.
+
+It is one harness among the possible Prose-Complete hosts, and it is the one we
+recommend: the **fast path**. The thesis it works toward, stated plainly:
+
+> **Inference cost that scales with surprise, not wall-clock time.**
+
+You declare what should stay true, Reactor watches the world, and it does
+expensive model work **only when something material actually moved**.
+
+<Callout type="info">
+  Reactor does not redefine the contracts. The five kinds, the `### Maintains`
+  schema, facets, and subscriptions are OpenProse -- taught once in
+  [the foundation](/openprose/contracts). This section is about the runtime: how
+  Reactor compiles that contract set and runs it efficiently.
+</Callout>
+
+## If you know React, you already know the shape
+
+Reactor borrows its shape from React. React keeps a DOM consistent with declared
+component state and re-renders only what moved. Reactor keeps a set of maintained
+truths consistent with the changing world and re-runs only the nodes whose inputs
+moved. Substitute three nouns and the whole design follows.
+
+| React | Reactor |
+| --- | --- |
+| Component | **Responsibility** -- a declared standing goal |
+| DOM | **World-model** -- the maintained truth, on disk, passed by pointer |
+| `render()` | **A bounded agent session** that computes the next world-model |
+| props | **Subscriptions** to other responsibilities' outputs |
+| `React.memo` (skip if props unchanged) | **Skip the render if subscribed inputs haven't moved** |
+| Manual dependency wiring | **Forme** -- the graph wires itself from the contracts |
+
+The intelligence is frozen ahead of time, at compile, into a per-node
+canonicalizer and the Forme wiring. The reconciler that decides _whether to wake_
+at run time is deliberately **dumb and deterministic**: there is **no judge
+step**, and the memo key has no clock in it.
+
+<Callout type="info">
+  You do not need React to use Reactor. It is React-_flavored_, not React-gated:
+  the contracts are Markdown, and the CLI, the receipts, and the keyless replay
+  are entirely React-free. The table above is an optional mental model for the
+  people who already carry one -- skip it freely.
+</Callout>
+
+## Compile once, run forever
+
+The single most important fact about Reactor is that it has two phases, and
+intelligence lives in only one of them.
+
+```text
+.prose.md contracts
+  -> COMPILE  (intelligent sessions, fires on contract change)
+       Forme draws the DAG from Requires <-> Maintains
+       each node's ### Maintains is frozen into a canonicalizer + validators
+  -> a content-addressed topology DAG + per-node deterministic artifacts
+  -> RUN  (a dumb reconciler, fires on every wake)
+       fingerprint inputs, skip the unchanged, render, commit, propagate
+```
+
+Compile is where intelligence acts. Sessions read the contracts, resolve which
+node depends on which, and freeze each declaration into deterministic code. Run
+is deliberately dumb: the reconciler compares fingerprints and never asks a model
+"did this change."
+
+This is the binding model of OpenProse, stated for Reactor: **compile freezes
+intelligent sessions into deterministic artifacts; run is a dumb reconciler that
+executes them.** There is no `.prose` parser and no interpreter -- a compile step
+is itself an agent session, and the session embodies the VM. See
+[the DAG and compile](/reactor/the-dag-and-compile).
+
+## Cost scales with surprise
+
+Most automation runs on a clock. A job wakes every hour, re-reads the world,
+re-does its work, and sleeps, whether or not anything changed. Cost scales with
+time.
+
+Reactor inverts that. Before a render runs, the reconciler fingerprints the
+node's subscribed inputs and its own contract. If nothing moved, the render does
+not run: the reconciler writes a cheap `skipped` receipt and spawns no session. A
+thousand-node system costs almost nothing on a quiet day and exactly what it
+should on a loud one.
+
+The honest version of the claim is not "zero cost on a static world." It is
+**cost scales with surprise, plus a forecast-amortized floor** for the
+self-rechecks that catch silent staleness. See
+[world-model and fingerprints](/reactor/world-model-and-fingerprints).
+
+## The one-paragraph mental model
+
+A node declares a standing goal, the shape of the truth it maintains, and what it
+needs from upstream. When the reconciler decides a node should run, it spawns one
+bounded agent session -- the render -- which reads new evidence, queries the prior
+world-model, writes the updated world-model, and signs a receipt. The receipt is
+the commit; downstream subscribers wake on it. A render that cannot satisfy its
+postconditions commits nothing: the prior truth stands and a `failed` receipt
+records why. Quiet nodes stay quiet and free.
+
+## How Reactor reaches your code
+
+Reactor is a real SDK you plug into your own stack, not a closed product. One
+call takes a directory of `.prose.md` contracts all the way to a booted,
+reconciling reactor and hands back one typed handle:
+
+```ts
+import { reactor } from "@openprose/reactor";
+
+// Compile ./my-project, assemble a durable reactor over ./state, boot to a
+// fixpoint (cold nodes render once; warm nodes memo-skip), return a live handle.
+const { reactor: r } = await reactor("./my-project", { directory: "./state" });
+
+console.log(r.ledger.all().length); // the receipt trail
+await r.ingest("source", { wake: { source: "external", refs: [] } });
+```
+
+That is the curated front door. The deeper surface lives behind six reasoned
+subpaths -- the facade, the full `@openai/agents` escape hatch, the substrate and
+record/replay seams, the offline boundary, and the engine room. The
+[SDK API reference](/sdk) documents all of it. To drive Reactor from the shell
+instead, see the [CLI overview](/cli/overview) and the
+[quickstart](/cli/quickstart).
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Author the contracts (OpenProse)"
+    href="/openprose/contracts"
+    description="The Markdown contract surface Reactor runs: the five kinds, the ### Maintains schema, facets, and subscriptions."
+  />
+  <Card
+    title="The DAG and compile"
+    href="/reactor/the-dag-and-compile"
+    description="How a contract set compiles, as sessions, into a topology DAG plus per-node canonicalizers and validators."
+  />
+  <Card
+    title="World-model and fingerprints"
+    href="/reactor/world-model-and-fingerprints"
+    description="The content-addressed maintained truth, the fingerprints of meaning, and facet-granular propagation."
+  />
+  <Card
+    title="The reconciler and receipts"
+    href="/reactor/reconciler-and-receipts"
+    description="The dumb reconciler, the memo key, the signed receipt chain, and render-writes-files."
+  />
+  <Card
+    title="Continuity and ingestion"
+    href="/reactor/continuity-and-ingestion"
+    description="The self-recheck cadence, gateways as external evidence, and idempotency cursors."
+  />
+  <Card
+    title="SDK API reference"
+    href="/sdk"
+    description="The 0.3.0 public surface: the curated front door, the agents escape hatch, adapters, the offline run boundary, and internals."
+  />
+</Cards>
+
+---
+
+_The conversation always ends. The responsibility shouldn't have to._

@@ -1,0 +1,114 @@
+---
+title: Connectors and sandbox
+description: Gateways and connectors with durable idempotency cursors, and the render sandbox threat model.
+---
+
+# Connectors and sandbox
+
+This page covers the two boundaries where a reactor touches the outside world: connectors, which bring external data in through gateways, and the sandbox, which bounds what a render can do.
+
+The CLI wires both of these from `reactor.yml`. The mechanism underneath is the SDK's ingress toolkit. If you are driving a reactor programmatically instead of through the CLI, the same gateway-poll and idempotency-cursor primitives are documented in the [SDK adapters reference](/sdk/adapters).
+
+## Gateways and connectors
+
+A gateway is an external-driven entry point: a `kind: gateway` contract that accepts arrivals and materializes them as a subscribable set. A connector is what feeds a gateway. It is three pieces:
+
+- **`fetch`** does the source I/O.
+- **`extract`** turns the payload into arrivals keyed by `id_field`.
+- **`stage`** writes each arrival into the gateway's truth before the wake.
+
+You wire a connector to a gateway in `reactor.yml`. `reactor init` scaffolds exactly this shape, with the built-in `static` connector so a first `serve`/`run` has a deterministic arrival to ingest:
+
+```yaml
+gateways:
+  - node: inbox
+    source_id: inbox
+    connector:
+      type: static
+      id_field: id
+      items: [{ id: item-1, body: "the first item" }]
+```
+
+### Built-in connector types
+
+| `type` | Behavior |
+| --- | --- |
+| `static` | A fixed `items` list. Great for `init`, examples, and tests. |
+| `http` | `GET <url>` (substituting `{cursor}`), with the JSON array becoming arrivals. |
+| `file` | Read a `dir` of `.json` files, re-scanned on each gateway poll (a per-poll `readdir`, not a filesystem watcher). |
+
+### Connector plugins
+
+A project may also ship a `connectors.cjs` or `connectors.js` plugin that exports `{ connectors: { [source_id]: { fetch, extract? } } }`. The plugin file is loaded once per project.
+
+### Durable idempotency
+
+Idempotency is durable. A per-source cursor dedups arrivals, so a restart never re-ingests the backlog. Poll a gateway again and nothing re-ingests, because the cursor already saw those ids. Add a new item and only that new arrival is staged.
+
+The cursor round-trips the same storage registry the reactor already persists to. There is no second state store.
+
+<Callout type="info">
+The cursor is not a CLI-only construct. It is the SDK's `createIdempotencyCursor` (with `cursorRegistryPatch` to round-trip through the storage registry), the same primitive a hand-mounted reactor uses. The CLI just configures it for you. See [SDK adapters](/sdk/adapters) for the `pollGateway` / `createPollConnectorAdapter` / `GatewayArrival` surface.
+</Callout>
+
+### Ingress at run time
+
+When `serve` boots, the topology is augmented with a phantom-ingress edge per configured gateway, so a staged arrival moves the gateway's input fingerprint. Each tick the driver polls every gateway before the continuity sweep: fetch, extract, stage each new arrival, wake the gateway, then persist the advanced cursor. Every step runs behind the reactor's serialization queue, so a gateway poll never overlaps a continuity poll or a trigger.
+
+You can also drive ingress manually with `POST /trigger/<node>` against a running daemon, or with `reactor trigger <node>` as a one-shot. There is no `reactor pull` command.
+
+<Callout type="info">
+The SDK `Wake` shape carries no payload slot (`{ source, refs }` only), so a payload cannot be smuggled into a wake. `reactor trigger <node> --data <json|@file>` therefore uses the *same* staging mechanism as connector ingress: it augments the node's topology with a phantom-ingress edge, stages the `--data` into that inbox (moving the input fingerprint), then ingests. The wake is a memo-miss and the node re-renders reading the staged payload. With no `--data`, the trigger is a bare external wake.
+</Callout>
+
+## The render sandbox
+
+The `sandbox` block is the render threat-model knob. It bounds what a render command can reach.
+
+### mode: none
+
+`mode: none` is the locked default and the trusted posture. Renders run in the SDK's cwd-scoped, time and output bounded shell. `shell_timeout_ms` tunes the per-command time bound (default 300 seconds).
+
+```yaml
+sandbox:
+  mode: none
+  shell_timeout_ms: 300000
+```
+
+### mode: docker
+
+`mode: docker` runs each render command inside a throwaway, network-disabled container, bind-mounting only the workspace:
+
+```text
+docker run --rm --network=none -v <ws>:<ws> -w <ws> <image> ...
+```
+
+```yaml
+sandbox:
+  mode: docker
+  image: node:22
+```
+
+The `image` defaults to a built-in image when omitted. The bind-mount root is the per-project workspace; each node's render working dir lives beneath it, and the harness harvests results on the host side, so the determinism boundary is unaffected.
+
+### The Docker-absent fallback
+
+If Docker is absent when `mode: docker`, the run degrades to the bounded shell with a surfaced note. It never crashes. `reactor doctor` reports Docker availability when `mode: docker` is configured:
+
+```text
+  sandbox        mode docker (Docker NOT available -- renders fall back to the bounded shell)
+```
+
+This keeps `mode: docker` safe to commit: a teammate without Docker still gets a working run, just at the `none` posture, with the downgrade made visible rather than silent.
+
+<Callout type="warn">
+**`none` and `docker` are the two modes that are realized.** A third mode, `mode: unix-local`, is accepted by the config parser but is not yet implemented: at run time it falls back to the bounded `none` shell with a surfaced note, exactly like the Docker-absent fallback. Treat it as deferred -- if you need real isolation today, use `docker`. The fallback is honest and never silent, but `unix-local` does not bound a render beyond what `none` already does.
+</Callout>
+
+## Where to go next
+
+<Cards>
+  <Card href="/sdk/adapters" title="SDK adapters" description="The ingress and cursor toolkit underneath these CLI knobs: pollGateway, createPollConnectorAdapter, createIdempotencyCursor, and the Substrate ports a custom backend implements." />
+  <Card href="/cli/configuration" title="CLI configuration" description="The full reactor.yml surface: model defaults, the state dir, and the deferred-knob caveats." />
+  <Card href="/cli/compile-run-serve" title="compile, run, serve" description="How serve boots the ingress loop and exposes the trigger endpoint." />
+</Cards>

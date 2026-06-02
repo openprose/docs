@@ -1,0 +1,159 @@
+---
+title: Reactor CLI
+description: The reference driver for the @openprose/reactor SDK. It compiles a .prose project and serves it as a durable, cost-observable daemon -- twelve commands, four global flags, three exit codes.
+---
+
+# Reactor CLI
+
+`@openprose/reactor-cli` is the deterministic command-line **driver** for the [`@openprose/reactor`](/reactor) SDK. The command is `reactor`.
+
+The CLI is one client of the SDK, not its only face. It does a single job: it **configures** the SDK. It never re-implements the reconciler and it never parses `.prose` itself. Compile freezes intelligence (model sessions) into deterministic, content-addressed artifacts. Run and serve execute those frozen artifacts with a dumb reconciler. Everything the CLI does, you can do yourself in code.
+
+<Callout type="info">
+The CLI is the recommended fast path. If you are embedding the harness in your own process -- mounting the DAG by hand, injecting a custom backend, driving the reactor handle from a server -- reach for the [SDK API reference](/sdk) instead. Same engine, programmatic surface.
+</Callout>
+
+## Install
+
+All three packages are live on npm: `@openprose/reactor-cli@0.2.0`, `@openprose/reactor@0.3.0`, `@openprose/reactor-devtools@0.2.0`. Prefer a **project-local** install -- no root, no global binary collisions -- and call the binary through `npx`:
+
+```sh
+npm install --save-dev @openprose/reactor-cli @openprose/reactor @openai/agents zod
+# then: npx reactor ...
+```
+
+To touch the keyless replay with **no install at all**, see [DevTools](/reactor-devtools):
+
+```sh
+npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --describe
+```
+
+A global install (`npm i -g`) is an alternative, but `-g` can collide with other tools' binaries and is `EACCES`-prone on Linux/WSL. Reactor requires **Node >=20** (the SDK's `engines` floor). The SDK core has zero runtime deps; the live render needs two peers (`@openai/agents`, `zod`), and `doctor`, `init`, and the whole observability suite need neither.
+
+<Callout type="info">
+`reactor --version` prints the **CLI** version (0.2.0), not the SDK version (0.3.0). That is expected, not a mismatch -- the two packages version independently.
+</Callout>
+
+## The reference client: compile, run, serve
+
+The CLI is the reference client for the SDK's three-phase lifecycle.
+
+1. **`compile`** runs the intelligent compile sessions (Forme topology, per-node canonicalizer, postconditions) and freezes them into a content-addressed IR cache under `<state-dir>/compile/`. An unchanged contract set recompiles at zero session cost.
+2. **`run`** ensures the IR is fresh, boots the reactor, drains to quiescence, prints per-node dispositions plus cost, and exits. One-shot.
+3. **`serve`** boots the durable host (filesystem receipts and world-models), runs the continuity driver loop, and exposes an HTTP surface. It stays up until `SIGINT` or `SIGTERM`, then drains in-flight work and exits.
+
+```sh
+npx reactor init my-project    # scaffold a gateway + responsibility + reactor.yml
+cd my-project
+npx reactor doctor             # check node, SDK, key/deps, sandbox, state-dir, IR
+npx reactor compile            # run the compile sessions -> IR cache
+npx reactor run                # boot, drain to quiescence, print dispositions + cost
+npx reactor serve --http 8080  # boot the durable host + continuity loop + HTTP surface
+```
+
+<Callout type="info">
+A static gateway (one with no scheduled wake) does not fire on `run`. Bring it up with `serve`, then deliver a wake -- `reactor trigger <node>` or an HTTP `POST /trigger/<node>`. See [Connectors and sandbox](/cli/connectors-and-sandbox).
+</Callout>
+
+## The twelve commands
+
+Every command spreads the four global flags on top of its own. The lifecycle verbs (`init`, `doctor`, `compile`, `run`, `serve`, `trigger`) drive the project; the observability suite (`status`, `topology`, `inspect`, `logs`, `trace`, `receipts`) reads the populated state directory.
+
+| Command | What it does |
+| --- | --- |
+| `init [dir]` | Scaffold a minimal `.prose` project (gateway + responsibility) + `reactor.yml`. |
+| `doctor` | Report environment health: node, SDK, live key/deps, offline mode, sandbox, state-dir, IR. |
+| `compile` | Run the compile sessions and refresh the content-addressed IR cache. |
+| `run` | Ensure the IR is fresh, boot the reactor, drain to quiescence, and report. |
+| `serve` | Boot the durable host (one or many reactors) and run the continuity driver loop. |
+| `trigger <node>` | Trigger a node with an external wake (one-shot mount). |
+| `status` | Report the standing compile cost beside the live run cost and dispositions. |
+| `topology` | Print the compiled DAG: nodes (and wake source) and resolved edges. |
+| `inspect <node>` | Inspect a node: topology position, fingerprints, last receipt, chain. |
+| `logs` | Print the receipt stream, optionally filtered to one node. |
+| `trace [node]` | Trace each node's receipt chain: wake to disposition, in chain order. |
+| `receipts [sub]` | Audit the receipt trail: `list` \| `verify` \| `cost` (default `list`). |
+
+The full per-command flag tables live in the [command reference](/cli/command-reference).
+
+## Four global flags
+
+Every command honors these four flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--state-dir <path>` | Durable state directory (default `./.reactor`). |
+| `--project <dir>` | Project directory containing `reactor.yml` (default `.`). |
+| `--json` | Machine-readable JSON output. |
+| `--offline` | Force offline mode (equivalent to `REACTOR_OFFLINE=1`). |
+
+## Three exit codes
+
+The CLI is built to be driven by agents and CI, so its exit codes are a contract, not a side effect.
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Success, or a clean help/version display. |
+| `1` | A reported failure with an actionable message on stderr (a handler set it). |
+| `2` | A usage error: an unknown command or flag, a missing argument, or an unknown `receipts` subcommand. |
+
+An unknown `receipts` subcommand (for example `receipts verifyy`) is rejected to stderr and exits `2` rather than silently falling through to `list` -- a trust hazard a CI gate must not inherit. Under `--json`, an operational failure mirrors a `{ ok: false, error }` envelope to stdout so a machine consumer is never left with empty output.
+
+## Cost scales with surprise
+
+Every receipt carries a `surprise_cause`. A node that re-wakes but whose inputs did not move memo-skips at zero render cost. A node renders, and spends tokens, only when its `(contract_fp, input_fps)` memo key actually moves.
+
+So the standing cost of a quiet system trends to zero, and a cost spike is always a real change propagating. `reactor receipts cost` and `reactor status` roll cost up by `surprise_cause` so you can see exactly what surprised the system. See [observability](/cli/observability) for the details.
+
+## The offline boundary
+
+The default import surface and every model-free command are keyless. Requiring the CLI entrypoint loads neither `@openai/agents` nor `zod`.
+
+`compile`, `run`, `serve`, `trigger`, and the connector and render paths reach the model surface only via a dynamic `import()` inside the handler. They need a live key (`OPENROUTER_API_KEY`) plus the optional peer deps. Every other command, including `doctor`, `init`, and the whole observability suite, runs fully offline, with no key and with the model deps absent.
+
+You can force offline mode on any command with `--offline` (or `REACTOR_OFFLINE=1`).
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="SDK API reference"
+    href="/sdk"
+    description="The programmatic surface the CLI drives: the facade, the typed handle, the six entrypoints, and the extension seams."
+  />
+  <Card
+    title="Setup"
+    href="/openprose/setup"
+    description="The one ordered onboarding path: keyless proof first, then init to doctor to compile to serve, then where contracts live."
+  />
+  <Card
+    title="Quickstart"
+    href="/cli/quickstart"
+    description="init to compile to run or serve, end to end, with the expected output shape."
+  />
+  <Card
+    title="Configuration"
+    href="/cli/configuration"
+    description="Every reactor.yml key, the environment variables, and the offline flag."
+  />
+  <Card
+    title="Compile, run, serve"
+    href="/cli/compile-run-serve"
+    description="The three core verbs in depth, the compile cache, the durable daemon, and its HTTP routes."
+  />
+  <Card
+    title="Connectors and sandbox"
+    href="/cli/connectors-and-sandbox"
+    description="Gateways, connectors with idempotency cursors, and the render sandbox."
+  />
+  <Card
+    title="Observability"
+    href="/cli/observability"
+    description="status, inspect, topology, logs, trace, and receipts with chain verification."
+  />
+  <Card
+    title="Command reference"
+    href="/cli/command-reference"
+    description="All twelve commands, their key flags, and the documented exit codes."
+  />
+</Cards>

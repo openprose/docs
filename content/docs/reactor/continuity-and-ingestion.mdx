@@ -1,0 +1,97 @@
+---
+title: Continuity and ingestion
+description: The self-recheck cadence, the freshness bridge, gateways as external evidence, and durable idempotency cursors.
+---
+
+# Continuity and ingestion
+
+A Reactor node has to wake somehow. This page covers what can wake a node, how a
+node rechecks itself when the world stays silent, and how outside evidence enters
+the graph.
+
+## Every wake is a receipt
+
+The reconciler only ever observes one kind of event: a receipt arrived. The only
+open question is who emitted it. That gives three wake sources, declared by a
+node's `### Continuity`:
+
+- **input-driven** (the default): an upstream node's receipt. This falls out of
+  `### Requires`, so it needs no declaration.
+- **self-driven**: the node's own continuity clock emits a synthetic
+  self-receipt, a tick. The tick is a deterministic, zero-token bridge, not a
+  model render: when a facet's `valid_until` has lapsed it mechanically moves that
+  facet's fingerprint (surprise propagates), and when nothing has lapsed it sleeps
+  until the soonest deadline (the tick stops there, costing nothing downstream).
+- **external-driven**: a gateway turns a webhook, cron, or manual trigger into a
+  receipt at the system's edge. This is the gateway case.
+
+One event type, three sources. The reconciler stays dumb; `### Continuity` is
+what declares which sources may wake a node. The author declares the wake-source;
+[Forme](/reactor/the-dag-and-compile) infers the wiring.
+
+## Freshness: state versus policy
+
+Two senses of "stale" live in two different places, and keeping them apart is
+what makes the freshness story clean.
+
+- **Freshness state lives in the world-model**: `valid_until`,
+  `last_corroborated`, `confidence`. Freshness is content. A fact corroborated
+  yesterday is genuinely a different truth than the same string corroborated six
+  months ago.
+- **Freshness policy lives in `### Continuity`**: the self-driven recheck cadence,
+  the node's own clock for the case where the world will not announce the change.
+
+The bridge between them is elegant: **a `valid_until` lapsing flips a fact's
+status, which moves that facet's fingerprint, so "time becoming material" is just
+another change that propagates as surprise.** There is no special clock path in
+the reconciler. `### Continuity` may read the world-model's soonest `valid_until`
+to drive its recheck cadence, but the cadence rule stays in `### Continuity` and
+the expiry data stays in the world-model.
+
+```text
+self-driven tick (a synthetic self-receipt; deterministic, no model render)
+  -> the clock checks the fact's valid_until
+  -> valid_until has lapsed -> the fact's status flips -> the facet fingerprint moves
+  -> propagation fires exactly as if an upstream had changed
+```
+
+One honest caveat: a lapsed `valid_until` only moves the fingerprint once
+something re-examines the fact. For the silent-staleness case, that something is
+the self-driven tick. So freshness propagation is event-driven where the world
+speaks and forecast-driven where it stays silent. This forecast cadence is the
+deliberately-declared floor under "cost scales with surprise," not a hidden
+clock.
+
+## Gateways: outside evidence enters the graph
+
+A gateway is the system's ingress. It is sugar for a `responsibility` whose
+wake-source is external-driven, so it has no `### Requires` and maintains the
+latest incoming truth. Forme registers the external-driven nodes as the entry
+points: the ways the system gets kicked off from outside.
+
+A freshly-mounted gateway has a defined initial empty world-model with an initial
+fingerprint, so downstreams see a valid "no data yet" state until the first
+external event arrives.
+
+## Idempotency cursors
+
+A connector that polls or receives external events must not let the same arrival
+count twice. Each gateway connector keeps a durable **idempotency cursor**: a
+persisted high-water mark over the source so a re-poll, a retry, or a replay
+after a crash does not re-ingest an event the graph already saw.
+
+This is why a duplicate trigger is deduped rather than re-rendered, and why a
+crash-window restart replays cleanly: the cursor and the receipt ledger together
+are the durable record of what has already been ingested. Staging an external
+arrival writes it into the gateway's world-model and emits an external receipt,
+which is the honest way evidence enters a graph whose source nodes would
+otherwise memo-skip a bare re-wake.
+
+## Putting it together
+
+A self-driven node wakes itself on its clock to catch silent drift. An
+input-driven node wakes when an upstream facet it subscribes to moves. A gateway
+wakes the graph when the outside world delivers an event. All three are the same
+mechanism, a receipt arriving, and all three ride the same propagation path
+through the [reconciler](/reactor/reconciler-and-receipts) -- the same path a
+forecast-paced recheck and an input-driven surprise both ride.

@@ -1,0 +1,73 @@
+---
+title: Recording
+description: The headless Playwright recorder behind the launch videos, the beat map that drives it, and the demo corpus of worked scenarios.
+---
+
+# Recording
+
+The viewer animates a run in a browser. To turn that into a shareable clip -- a launch video, a bug repro, a teaching GIF -- the package source ships a **headless recorder** that drives the viewer through a scripted set of beats and renders the result to video.
+
+<Callout type="info">
+The recorder and the demo fixtures are **repository tooling**, not part of the published npm package (`@openprose/reactor-devtools` ships only the viewer, `--describe`, and the library). Recording uses Playwright, a dev dependency. Clone the repo to use it.
+</Callout>
+
+## The recorder
+
+`scripts/record-demo.mjs` is end-to-end and fully automatic -- no manual steps:
+
+1. frees the target port, then **spawns the devtools server** as a managed child against a fixture (waits for `/api/state`, kills it on exit, aborts on a stale server);
+2. launches **headless Chromium** (1280x720, 2x device scale, `recordVideo`);
+3. drives the **beats** by stepping the cascade with paced holds, so every flash, skip, edge light, and cost spike actually plays on camera;
+4. parks a **keyframe PNG** per beat via the `#frame=N` deep-link;
+5. finalizes the `.webm`, then transcodes to `.mp4` with `ffmpeg`.
+
+```sh
+# from the repo, with the package built:
+FIXTURE=monorepo-ci node packages/reactor-devtools/scripts/record-demo.mjs
+```
+
+The `FIXTURE` environment variable (or the first argument) selects which committed fixture to record. Unset -- or `observatory` -- records the Agent State Observatory demo. `ffmpeg` must be on `PATH` for the mp4 step; a fresh machine installs the Chromium build once via Playwright.
+
+## The beat map
+
+The recorder is data-driven. It reads `<state-dir>/beats.json` -- a director's script over the run -- for which frames to hold on, how long, and what each one says:
+
+```json
+{
+  "scenario": "monorepo-ci",
+  "title": "Your CI re-ran 200 checks. Reactor re-ran 3.",
+  "beats": [
+    { "name": "cold-boot", "park": 21, "from": 0,  "to": 21, "holdMs": 2600, "caption": "the graph builds once" },
+    { "name": "hero-leaf", "park": 39, "from": 33, "to": 39, "holdMs": 3800, "caption": "a 4-line diff wakes only the ui lane · 5 packages stay dark" }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `park` | the frame to screenshot for this beat's still |
+| `from` / `to` | the inclusive step range the recorder drives, so the moving pulses fire on camera |
+| `holdMs` | how long to hold the parked frame |
+| `caption` | the self-narrating caption shown for the beat (also surfaced live in the viewer) |
+
+`beats.json` is optional and purely presentational for **replay** -- it changes nothing about the run, and a state-dir without it still replays in the viewer (it just falls back to computed captions). **Recording** is the exception: the `FIXTURE=<id>` recorder requires authored beats (either a `beats.json` in the state-dir, or, for `agent-observatory`, the recorder's built-in beat map), so a bare state-dir replays but does not record until you author a `beats.json` for it.
+
+## The demo corpus
+
+The repository ships seven committed, replayable demo state-dirs under `packages/reactor-devtools/fixtures/` -- each a deterministic, zero-key corpus chosen to make one Reactor behavior unmistakable:
+
+| Fixture | What it shows |
+| --- | --- |
+| `agent-observatory` | Selective wake across six agent runtimes -- touch one Claude session, only that path lights, five runtimes stay dark. Plus a self-tick floor, a diamond single-wake, a failure, and a batch cost spike. |
+| `monorepo-ci` | Memoization across a build/test/review DAG -- a 4-line diff wakes only its package's lane; a hub change fans out wider; a failing test blocks the merge gate. |
+| `news-desk` | Cost scales with surprise -- a long flat-cost stretch of noisy no-op re-wakes, one real story spikes the briefing, a duplicate of it dedups away. |
+| `inbox-triage` | Diamond dedup + failure isolation -- five identical newsletters collapse to one render; one malformed email fails red while the digest still ships. |
+| `contract-redline` | Incremental re-summarization -- a single-clause edit re-runs only that section plus the rollup chain; a cosmetic edit memo-skips. |
+| `research-tree` | Structural recursion -- revise one finding three levels deep and only its ancestor path re-synthesizes; sibling branches stay dark. |
+| `masked-relay` | Per-consumer facets + a convergent diamond -- mask lanes light independently per consumer, and scouts/expanders converge into the masker and critics without double-firing. The original standalone fixture; it ships no authored `beats.json`, so it replays with computed captions and is the one fixture you cannot drive through the `FIXTURE=` recorder. |
+
+Open any of them in the viewer (`reactor-devtools packages/reactor-devtools/fixtures/<id>`) or inspect them with `--describe`. Five carry an authored `beats.json` and `agent-observatory` carries the recorder's built-in beat map, so those six record with `FIXTURE=<id>`; `masked-relay` (no beats) replays but does not record. Each fixture is paired with an invariant test that locks the behavior its video claims, so the demo and the test assert the same thing.
+
+## Recording your own run
+
+The recorder works against any state-dir with a `beats.json`. To film one of your own reactors: run it to a state-dir, author a `beats.json` against the frame indices you see in [`--describe`](/reactor-devtools/describe), drop it in the state-dir, and point the recorder at it.

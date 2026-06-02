@@ -1,0 +1,10 @@
+{
+  "title": "Reactor",
+  "pages": [
+    "index",
+    "the-dag-and-compile",
+    "world-model-and-fingerprints",
+    "reconciler-and-receipts",
+    "continuity-and-ingestion"
+  ]
+}

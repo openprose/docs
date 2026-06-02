@@ -1,0 +1,102 @@
+---
+title: The DAG and compile
+description: How a .prose project compiles, as sessions, into a content-addressed topology DAG plus per-node canonicalizers and validators.
+---
+
+# The DAG and compile
+
+Compile is the only intelligent phase of the Reactor. It runs ahead of run
+time, it fires when the contract set changes, and it freezes intelligent
+sessions into deterministic artifacts the run phase executes.
+
+There is no `.prose` parser. A compile step is an agent session that reads the
+contracts and emits structured output, which a small deterministic lowering
+turns into run-time artifacts. The session embodies the VM; the only
+deterministic structures are the compile-frozen outputs, and even those are
+produced by sessions.
+
+## What compile produces
+
+A full compile runs Forme once, then the per-node materiality and gate sessions
+for each node Forme found.
+
+```text
+loadContractSet(dir)        load the contract text (trivial, deterministic)
+  -> compileForme           the topology session -> the DAG
+  -> per node:
+       compileCanonicalizer the materiality session -> a canonicalizer
+       compilePostcondition the gate session        -> validators
+  => a mountable ReconcilerTopology + per-node compiled artifacts
+```
+
+The output is a content-addressed topology plus, for every node, a canonicalizer
+(what counts as a change, frozen) and a set of validators (the commit gate).
+These are what the run phase mounts. The compile run reports its own token cost
+with `surprise_cause: self`, because a compile is a `self`-driven build.
+
+## Forme draws the edges
+
+Forme is the wiring session. It reads the full set of declared contracts and
+resolves each node's needs to the producer that satisfies them, **semantically**.
+A node says in `### Requires` that it needs "a current view of competitor
+funding"; Forme matches that need to the `funding` part of some producer's
+`### Maintains`. This is meaning matching, not string matching.
+
+The edges of the DAG are Forme's output, not human-authored config. Intent
+stays with the human (the need, in the contract); the wiring is Forme's. Two
+rules make this safe:
+
+- A need with no producer, or two equally plausible producers, is a surfaced
+  **wiring diagnostic**, never a silent guess.
+- Acyclicity is a postcondition on Forme's own output. A topology that would
+  close a loop is rejected and surfaced.
+
+Genuine feedback (a node's output shaping its own next input) is not a back-edge.
+It is self-driven [continuity](/reactor/continuity-and-ingestion): loops live in
+time, not in edges.
+
+## What a node is
+
+Every node in the DAG is the same shape: a declaration plus a render. The `kind`
+in the contract frontmatter is sugar over that one atom.
+
+| `kind` | Role | Interface | World-model |
+| --- | --- | --- | --- |
+| `responsibility` | The mounted node, the headline | `### Requires` to `### Maintains` | persisted |
+| `function` | A called helper, the library tier | `### Parameters` to `### Returns` | none |
+| `gateway` | Source or ingress | no `### Requires`; `### Maintains` the incoming truth | persisted |
+| `pattern` | Reusable coordination, expanded at compile | n/a | n/a |
+| `test` | Assertions over a subject's truth or receipts | n/a | n/a |
+
+A `responsibility` is a mounted render with a standing, persisted world-model
+that other nodes can subscribe to. A `function` is a called render: stateless,
+ephemeral, returns a value, carries no world-model. A `gateway` is sugar for a
+`responsibility` whose wake-source is external (a webhook, cron, or manual
+trigger), so it has no `### Requires` and maintains the latest incoming truth.
+
+Being subscribed-to is what makes something a node. Inside a render you can
+`call` functions and spawn sub-agents, but none of that is a node. The only
+cross-node connection is a subscription.
+
+## Mounting makes a node, not statefulness
+
+A render becomes a DAG node when it is **mounted**. Mounting is a harness act
+that adds identity, a persisted world-model, and the resolved subscriptions.
+Node-ness is conferred by mounting, never by holding memory. A pure transform
+with no internal memory is still a node if it is mounted as a producer; a render
+that reads its own prior truth is not a node merely because it is stateful.
+
+## Content-addressed, and re-runnable
+
+Forme's resolved topology is itself a maintained truth: it records the nodes,
+the resolved edges, the external entry points, and `acyclic: true` as a
+postcondition. Because the topology is committed and versioned, the wiring is
+inspectable and the compiled artifacts are cached. Compile re-fires only when
+the contract set changes, the rarest event in the system. Editing a `### Maintains`
+schema moves that node's contract fingerprint, which is a memo miss, so the
+node simply re-renders into the new shape on the next wake. There is no separate
+migration machinery.
+
+Once compile has produced the topology and the per-node artifacts, the
+[reconciler](/reactor/reconciler-and-receipts) takes over and the intelligent
+phase is done until a contract changes again.
