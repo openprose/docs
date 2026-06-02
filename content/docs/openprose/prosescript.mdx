@@ -1,0 +1,376 @@
+---
+title: ProseScript
+description: The optional imperative pinning layer inside ### Execution. Declarative by default, explicit when needed. Contract Markdown owns the interface; ProseScript only choreographs one render.
+---
+
+# ProseScript
+
+Contract Markdown is declarative. You write down the world you want to keep
+true, and the harness decides the graph. ProseScript is the **pinning layer**:
+the optional imperative script you reach for when the *order* of work inside a
+single render matters and you do not want a host to choose it for you.
+
+The mantra is **declarative by default, explicit when needed**. ProseScript is
+always secondary to the contract. It never declares what a node depends on or
+what it produces -- that is the contract's job. It only choreographs the steps
+*inside* one render.
+
+<Callout type="info">
+ProseScript is the **intra-node** layer. `call` invokes a `function`, and
+`session` / `agent` / `resume` spawn one-off subagents -- all ephemeral and
+internal to producing this node's world-model. Cross-node connections are never
+made in ProseScript; they are subscriptions that Forme wires from a
+responsibility's `### Requires` to a producer's `### Maintains`.
+</Callout>
+
+## When to pin, and when not to
+
+Use Contract Markdown when the *end state* matters and the host can pick the
+graph. Use ProseScript when **order, loops, branching, retries, parallelism, or
+exact call choreography** matter and you want them written down, not inferred.
+
+The Prose VM follows pinned choreography exactly. It does not infer new
+parallelism, reorder calls, or add missing calls. That precision is the whole
+point: a pinned `### Execution` block is a promise that the steps run as
+written.
+
+| You want | Reach for |
+| --- | --- |
+| A standing truth kept current; the host may choose the graph | Contract Markdown (`### Maintains`) |
+| An exact sequence of calls inside one render | ProseScript in `### Execution` |
+| Parallel fan-out with a join policy | `parallel` in ProseScript |
+| Retry / backoff on a flaky call | `retry` / `backoff` call modifiers |
+| A one-off subagent internal to this render | `session` / `agent` / `resume` |
+
+## Where ProseScript lives
+
+ProseScript appears on exactly two surfaces. Both are owned by Contract
+Markdown, so an embedded script must **not** redeclare caller inputs or public
+outputs.
+
+| Surface | Scope | Primary call style | Interface source |
+| --- | --- | --- | --- |
+| `### Execution` in a `*.prose.md` | Pinned intra-node choreography | `call function-name` | `### Requires` / `### Maintains` (responsibility) or `### Parameters` / `### Returns` (function) |
+| Pattern `### Delegation` | Slot interaction rules inside a pattern instance | `call slot-name` | `### Slots`, `### Config`, and the pattern instance bindings |
+
+A responsibility declares its interface with `### Requires` / `### Maintains`; a
+function declares it with `### Parameters` / `### Returns`. Inside the script,
+those declared names are simply in scope. The reactive interface always belongs
+to the contract sections -- embedded ProseScript should never restate them.
+
+## A first pinned block
+
+Inside Contract Markdown, a fenced `prose` block under `### Execution` pins the
+choreography for one render:
+
+````markdown
+### Execution
+
+```markdown
+let findings = call researcher
+  topic: topic
+
+let report = call writer
+  findings: findings
+
+return report
+```
+````
+
+`topic` comes from the contract's `### Requires` (responsibility) or
+`### Parameters` (function). `return report` hands the result to the enclosing
+`### Maintains` or `### Returns`. The VM runs `researcher`, then `writer`, in
+that order, every time -- nothing is reordered or inferred.
+
+## The constructs
+
+ProseScript is a small, complete language. The constructs below cover everything
+the grammar exposes.
+
+### Bindings and values
+
+`let` creates a mutable binding; `const` creates an immutable one. Object
+results can be destructured.
+
+```markdown
+let draft = call writer
+  brief: brief
+
+const threshold = "high confidence"
+
+let { findings, sources } = call researcher
+  topic: topic
+```
+
+Values are strings (`"short"`, `"""multi\nline"""`), numbers, booleans, `null`,
+arrays, objects, and references. Object shorthand keeps variable names:
+`{ findings, sources }` means `{ findings: findings, sources: sources }`. String
+interpolation uses `{name}` or `{object.property}`. Scope is lexical, and loop
+variables, block parameters, and catch variables are immutable within their
+body.
+
+### `call`
+
+`call` invokes a Contract Markdown `function`, a pattern instance or slot, or a
+`use`d dependency function. Input bindings are indented `name: expression`
+lines; the result is the target's declared outputs.
+
+```markdown
+let response = call external-api
+  request: request
+  retry: 3
+  backoff: exponential
+```
+
+`retry` and `backoff` are call modifiers (`backoff` may be `none`, `linear`, or
+`exponential`). Each `call` target must resolve to a real function or pattern
+slot, or Forme rejects the block.
+
+### `parallel`
+
+Branch-local statements run concurrently and join according to modifiers.
+
+```markdown
+parallel:
+  let security = call security-reviewer
+    code: code
+  let performance = call performance-reviewer
+    code: code
+
+let report = call synthesizer
+  context: { security, performance }
+```
+
+Modifiers control the join: `"all"` (default), `"first"`, `"any"` with
+`count: N`, and `on-fail:` policies (`"fail-fast"` default, `"continue"`,
+`"ignore"`). Defaults are `("all", on-fail: "fail-fast")`.
+
+### `for`, `repeat`, and `loop`
+
+Fixed repetition, collection iteration, and open or model-sized loops:
+
+```markdown
+repeat 3 as attempt:
+  call generator
+    attempt: attempt
+
+parallel for item in items:
+  call processor
+    item: item
+
+loop until all tests pass (max: 5):
+  let results = call tester
+  if results include failures:
+    call fixer
+      test-results: results
+```
+
+Open `loop` blocks should carry a `(max: N)` bound -- it is a warning in source
+and an error in generated canonical docs. `parallel for` preserves input order
+unless a parallel modifier requests race semantics.
+
+### `if` / `elif` / `else` and `choice`
+
+`if` runs the first true branch in order. `choice` lets the VM select exactly
+one labeled peer branch by criteria.
+
+```markdown
+if review has critical concerns:
+  call reviser
+    review: review
+elif review has minor concerns:
+  call polisher
+    review: review
+else:
+  call approver
+
+choice best recovery path:
+  option "retry":
+    call retryer
+  option "abort":
+    throw "No safe recovery path"
+```
+
+Conditions are **discretion text** -- natural-language conditions the VM
+evaluates. They may be bare, `**wrapped**`, or `***multi-line***`. Prefer
+concrete, observable conditions over vague ones.
+
+### `try` / `catch` / `finally` and `throw`
+
+```markdown
+try:
+  let response = call external-api
+    request: request
+    retry: 3
+    backoff: exponential
+catch as err:
+  call fallback
+    error: err
+finally:
+  call cleanup
+```
+
+`try` runs its body; `catch` handles an unhandled failure; `finally` always
+runs. `throw` (bare) re-raises the active error inside `catch`;
+`throw expression` raises a new one. A `try` needs at least a `catch` or a
+`finally`.
+
+### `session`, `agent`, and `resume`
+
+Pinned blocks can spawn direct subagents when the work is intentionally a
+one-off internal to this render -- not a reusable `function`.
+
+```markdown
+agent researcher:
+  model: sonnet
+  persist: project
+  prompt: "Research thoroughly and keep a compact project memory."
+  skills: ["web-search"]
+  shape:
+    self: ["research", "source evaluation"]
+    prohibited: ["writing source files", "running shell commands"]
+
+let findings = session: researcher
+  prompt: "Research {topic}"
+  context: topic
+
+let review = resume: researcher
+  prompt: "Review the new draft"
+  context: findings
+```
+
+`session "prompt"` spawns a one-off subagent; `session: agent` uses an `agent`
+definition; `resume: agent` continues a persistent agent with memory. `shape` is
+the ProseScript equivalent of Contract Markdown `### Shape` -- it expresses
+behavioral boundaries, not raw secret or permission values. Host sandbox
+permissions remain a host adapter concern.
+
+<Callout type="warn">
+Inside `### Execution`, prefer `call function` over a direct `session` when an
+equivalent `function` exists -- the VM warns when you skip a real function for an
+ad-hoc subagent. Reach for `session` / `agent` / `resume` only when the work is
+genuinely an intentional one-off.
+</Callout>
+
+### Blocks, `do`, and pipelines
+
+Anonymous `do:` groups sequential statements; named `block` definitions are
+reusable local choreography invoked with `do name(...)`. Pipelines transform
+collections left to right with `map`, `pmap`, `filter`, and `reduce`.
+
+```markdown
+block review-and-fix(artifact, max_rounds):
+  let review = call critic
+    artifact: artifact
+  if review has critical issues:
+    return call fixer
+      artifact: artifact
+      review: review
+  return artifact
+
+let result = do review-and-fix(draft, 3)
+
+let summaries = articles
+  | filter:
+      call relevance-checker
+        article: item
+  | map:
+      call summarizer
+        article: item
+```
+
+Block definitions are collected before execution, so a block may be invoked
+before its definition. Each invocation gets its own scope, and parameters are
+immutable within the call.
+
+## `use`: declaring dependencies
+
+`use` declares an external dependency for pinned choreography. It is processed
+before agents, blocks, and statements, and follows the same disk-only resolution
+rules as `prose run`.
+
+```markdown
+use "github.com/openprose/prose/packages/std/evals/inspector" as inspector
+
+let inspection = call inspector
+  run-path: run_path
+```
+
+`use` is valid in a standalone ProseScript block, but **not** inside embedded
+Contract Markdown ProseScript -- declare the dependency in the contract, not in
+the render body.
+
+## The boundary: ProseScript does not own the interface
+
+This is the single most important rule, restated. ProseScript does not own
+public interfaces in current OpenProse source:
+
+- `### Requires` (responsibility) or `### Parameters` (function) declares the
+  variables available to `### Execution`.
+- `### Maintains` (responsibility) declares the world-model truth the render
+  must keep current; `### Returns` (function) declares the value it must
+  produce.
+- `return` chooses the execution block's result for the enclosing contract.
+
+Legacy standalone `.prose` files used `input` and `output` declarations. Treat
+those as upgrade inputs, not current syntax -- writing `input` or `output`
+inside current ProseScript is an error. Run `prose upgrade --dry-run` to migrate.
+
+## How a pinned block runs
+
+Embedded `### Execution` runs in three phases:
+
+1. **Parse** the lexical structure, blocks, declarations, and statements.
+2. **Validate** names, scopes, call targets, inputs and outputs, loop bounds, and
+   surface-specific restrictions. Forme checks that every `call` target resolves
+   to a real `function` (local, `use`d, or a `std/` library function) or a
+   delegated helper the render declares, and that the returned value satisfies
+   the enclosing `### Maintains` / `### Returns`.
+3. **Execute** in source order, using the Prose VM for calls, sessions, state,
+   bindings, retries, and final result publication.
+
+Validation errors block execution; warnings do not, but generated canonical docs
+should resolve warnings where possible.
+
+## Pattern delegation
+
+Pattern `### Delegation` describes how bound slots interact. When written as
+fenced `prose`, it is validated as ProseScript with pattern-specific scope: slot
+names, `config` keys, and parent-provided inputs are in scope, and `call` may
+target slots or nested pattern instances.
+
+```markdown
+loop until critic accepts output (max: config.max_rounds):
+  let output = call worker
+    task: task
+    feedback: feedback
+  let verdict = call critic
+    output: output
+    quality-bar: config.quality-bar
+  if verdict is not accepted:
+    let feedback = verdict.feedback
+
+return output
+```
+
+Pattern files are not directly runnable. A responsibility instantiates the
+pattern and binds its slots before the delegation runs.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Contracts"
+    href="/openprose/contracts"
+    description="The authored surface: Markdown contracts, the five kinds, and the load-bearing sections that own the interface ProseScript leans on."
+  />
+  <Card
+    title="Declare outcomes"
+    href="/openprose/declare-outcomes"
+    description="Why intent lives in the contract, not the script -- the declarative foundation ProseScript is secondary to."
+  />
+</Cards>
+
+For the complete grammar, validation tables, and execution model, see the
+ProseScript reference in the OpenProse spec. When the docs and the skill
+disagree, trust the skill.

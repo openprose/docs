@@ -49,14 +49,16 @@ DevTools meets two different readers -- a human at a browser and an agent at a t
 
 ## Where it sits in the stack
 
-DevTools is a pure, near-zero-dependency reader. Its only runtime dependency is `@openprose/reactor` itself; every read goes through the SDK's [`createReplaySession`](/reactor-devtools/state-dirs-and-replay) shaping helper, so the viewer never re-implements the reconciler's moved-facet diff or its propagation. The SDK stays headless and zero-dep; every opinionated UI choice is quarantined in this package.
+DevTools is a pure, near-zero-dependency reader. Its only runtime dependency is `@openprose/reactor` itself; every read goes through the SDK's [`createReplaySession`](/reactor-devtools/state-dirs-and-replay) shaping helper -- imported from the package's curated `.` front door -- so the viewer never re-implements the reconciler's moved-facet diff or its propagation. The SDK stays headless and zero-dep; every opinionated UI choice is quarantined in this package.
 
 ```text
 @openprose/reactor        the harness -- compiles + runs, writes receipts
-  └─ /sdk : createReplaySession    shapes the ledger into a replay (ordering, moved facets, cost)
+  └─ "@openprose/reactor" : createReplaySession    shapes the ledger into a replay (ordering, moved facets, cost)
 @openprose/reactor-cli    the CLI -- `reactor run` / `serve` persist the state-dir
 @openprose/reactor-devtools   this package -- reads the state-dir, animates it
 ```
+
+`createReplaySession` is re-exported from the curated `.` front door, so the import is just `import { createReplaySession } from "@openprose/reactor"` -- no deep subpath. See the [SDK front door](/sdk/front-door) for the full reference.
 
 ## Install
 

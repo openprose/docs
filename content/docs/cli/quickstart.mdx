@@ -5,75 +5,101 @@ description: Scaffold, compile, and run a reactor project end to end.
 
 # Quickstart
 
-This walks the full path: `reactor init` to scaffold a project, `reactor compile` to freeze it, then `reactor serve` to drive the scaffold's static gateway to a real receipt.
+This walks the full path: `reactor init` to scaffold a project, `reactor doctor` to check the environment offline, `reactor compile` to freeze the intelligence, then `reactor serve` to drive the scaffold's static gateway to a real receipt.
+
+If you are an agent onboarding on behalf of a user, the centralized, ordered setup path -- keyless proof first, then init/doctor/compile, then go live, then where contracts live -- is in [OpenProse Setup](/openprose/setup). This page is the CLI-local version of the same flow.
 
 ## Install
 
+Prefer a **project-local** install. No root, no global binary collisions, and the live render peers (`@openai/agents`, `zod`) resolve from the project tree. Call the binaries through `npx`:
+
 ```sh
-npm i -g @openprose/reactor @openprose/reactor-cli @openprose/reactor-devtools
+npm install --save-dev @openprose/reactor-cli @openprose/reactor @openai/agents zod
+# then: `npx reactor …` / `npx reactor-devtools …`
 ```
 
-`@openprose/reactor` is the SDK engine the CLI drives. As of this release the SDK is a real dependency of `@openprose/reactor-cli`, so `npm i -g @openprose/reactor-cli` already pulls it in -- the line above just makes the SDK and the replay viewer (`@openprose/reactor-devtools`) explicit so the keyless replay in [Reactor DevTools](/reactor-devtools/quickstart) is there too. None of these pull a model provider or a key.
+`@openprose/reactor` is the SDK engine the CLI drives, and a real dependency of `@openprose/reactor-cli` -- the line above just makes it explicit alongside the two live-render peers. None of these pull a model provider or a key. Zero runtime deps live in the SDK core; `doctor`, `init`, the whole observability suite, and the `@openprose/reactor-devtools` replay viewer need neither key nor peers.
+
+To touch the keyless replay with **no install at all** -- the fastest proof that the receipts are real:
+
+```sh
+npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --describe
+```
+
+A global install is an alternative, but `-g` can collide with other tools' binaries and is `EACCES`-prone on Linux/WSL. If you go that route, install the SDK first and add the peers: `npm i -g @openprose/reactor @openprose/reactor-cli @openprose/reactor-devtools @openai/agents zod`.
+
+<Callout type="info">
+  Requires **Node >=20** (the SDK's `engines` floor). `reactor --version` prints the **CLI** version (`0.2.0`), not the SDK version (`0.3.0`) -- expected, not a mismatch.
+</Callout>
 
 ## Scaffold a project
 
 `reactor init` writes a minimal, compilable project: a gateway, a responsibility that subscribes to it, a `reactor.yml`, a `.gitignore`, and a short README.
 
 ```sh
-reactor init my-project
+npx reactor init my-project
 cd my-project
 ```
 
 The scaffold is the smallest end-to-end shape with a real edge. The `inbox` gateway accepts external arrivals and materializes them as a set. The `digest` responsibility subscribes to that set, so when the inbox moves the digest re-renders, and only then.
 
+Your contracts live as `*.prose.md` files under the scaffold's `src/`. That is where you author the standing truths the reactor maintains -- see [Contracts](/openprose/contracts) for the authored surface.
+
 `init` refuses to overwrite existing files by default. Pass `--force` to clobber a directory that already contains scaffold files.
 
 ## Check your environment
 
-`reactor doctor` runs fully offline and reports node version, SDK resolvability, live-key presence (it never prints the key), live-dep presence, the sandbox mode, whether the state directory is writable, and the compiled-IR freshness.
+`reactor doctor` runs fully offline and reports node version, SDK resolvability and version, live-key presence (it never prints the key), live-dep presence, the SKILL bundle, the sandbox mode, whether the state directory is writable, and the compiled-IR freshness.
 
 ```sh
-reactor doctor
+npx reactor doctor
 ```
 
 ```text
 reactor doctor
 
   node           v22.3.0 (ok)
-  sdk            @openprose/reactor@0.2.0 (resolved)
+  sdk            @openprose/reactor@0.3.0 (resolved)
   offline mode   not forced
   live key       present (OPENROUTER_API_KEY)
   live dep       @openai/agents: ok
   live dep       zod: ok
+  skill bundle   present (/abs/my-project/node_modules/@openprose/...)
   sandbox        mode none
   state dir      /abs/my-project/.reactor (writable)
   compiled IR    not compiled -- run `reactor compile`
 
   status: healthy-for-offline
+  live:   READY -- key + model peers + SKILL present; `reactor compile`/`run` can render
 ```
 
-Add `--live` to probe one live smoke render against the real provider.
+Add `--live` to probe one live smoke render against the real provider. The keyless surface (everything but `compile`/`run`/`serve`/`trigger`) works even when the live key, the peers, and the SKILL bundle are absent.
 
 ## Compile
 
-`compile` runs the intelligent compile sessions and freezes them into the content-addressed IR cache. It needs a live key (`OPENROUTER_API_KEY`) plus the `@openai/agents` and `zod` peer deps.
+`compile` runs the intelligent compile sessions (Forme topology, per-node canonicalizer, postconditions) and freezes them into the content-addressed IR cache. It needs a live key (`OPENROUTER_API_KEY`) plus the `@openai/agents` and `zod` peers.
 
 ```sh
-reactor compile
+export OPENROUTER_API_KEY=...   # doctor confirms it's present, never echoes it
+npx reactor compile
 ```
 
-An unchanged contract set recompiles at zero session cost because the cache key is content-addressed. To check freshness without compiling (handy in CI), use `--check`, which exits non-zero when the cache is stale.
+The cache key is `(contract-set fingerprint, SDK version, model id)` -- cost is never part of cache identity, so an unchanged contract set recompiles at **zero session cost** (a cache hit). To check freshness without compiling (handy in CI), use `--check`, which exits non-zero when the cache is stale.
 
 ```sh
-reactor compile --check        # exits 1 right after init, before the first compile
+npx reactor compile --check    # exits 1 right after init, before the first compile
 ```
+
+<Callout type="info">
+  Reading the exit code in CI? Check `$?` from the bare command -- **do not pipe** if you need the status. A pipe reports the *last* command's exit, so a STALE failure silently looks like a pass.
+</Callout>
 
 ## Inspect the compiled DAG
 
 Once compiled, the offline observability commands work with no key. `topology` prints the resolved DAG.
 
 ```sh
-reactor topology               # the compiled DAG (inbox -> digest)
+npx reactor topology           # the compiled DAG (inbox -> digest)
 ```
 
 ## Drive the static gateway
@@ -83,19 +109,55 @@ The scaffold's `inbox` gateway uses a `static` connector: its seeded items are i
 `serve` boots the durable host, runs the continuity loop, and binds the built-in HTTP surface. It stays up until you stop it with Ctrl-C.
 
 ```sh
-reactor serve --http 8080
+npx reactor serve --http 8080
 ```
+
+<Callout type="warn">
+  `serve --http` binds **`127.0.0.1` by default** and ships **no auth** in v1. `POST /trigger/<node>` is unauthenticated, so anything that can reach the port can wake a node and cause model spend. Only expose it externally (`--host 0.0.0.0`) behind a reverse proxy or network policy that adds auth and rate-limiting.
+</Callout>
 
 On the first tick the `static` connector ingests the seeded items, so the gateway and digest both render. In another shell you can read the trail and the standing cost:
 
 ```sh
-reactor status                 # standing compile cost beside the run cost
-reactor receipts list          # the gateway + digest receipts
-reactor receipts cost          # cost rolled up by surprise_cause
+npx reactor status             # standing compile cost beside the run cost
+npx reactor receipts list      # the gateway + digest receipts
+npx reactor receipts cost      # cost rolled up by surprise_cause
 ```
+
+Then replay your own run's receipt ledger -- keyless, no model call:
+
+```sh
+npx reactor-devtools .reactor --describe
+```
+
+Every receipt carries a `surprise_cause`. A node that re-wakes but whose inputs did not move memo-skips at zero render cost, so a cost spike is always a real change propagating. Benchmarks are openly pending -- the proof is the receipts and the keyless replay, not a number in our marketing.
 
 ## Next steps
 
-- [Configuration](/cli/configuration) covers every `reactor.yml` key.
-- [Compile, run, serve](/cli/compile-run-serve) goes deep on the three core verbs.
-- [Connectors and sandbox](/cli/connectors-and-sandbox) explains gateways and the render sandbox.
+<Cards>
+  <Card
+    title="OpenProse Setup"
+    href="/openprose/setup"
+    description="The centralized agent-first path: keyless proof, init to doctor to compile, go live, and where contracts live."
+  />
+  <Card
+    title="Configuration"
+    href="/cli/configuration"
+    description="Every reactor.yml key, the environment variables, and the offline flag."
+  />
+  <Card
+    title="Compile, run, serve"
+    href="/cli/compile-run-serve"
+    description="The three core verbs in depth, the compile cache, and the durable daemon."
+  />
+  <Card
+    title="Connectors and sandbox"
+    href="/cli/connectors-and-sandbox"
+    description="Gateways, connectors with idempotency cursors, and the render sandbox."
+  />
+  <Card
+    title="Reactor DevTools"
+    href="/reactor-devtools/quickstart"
+    description="The keyless replay viewer: dispositions, cost-by-surprise, and chain-verify."
+  />
+</Cards>

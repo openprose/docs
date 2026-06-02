@@ -1,11 +1,11 @@
 ---
 title: Compile, run, serve
-description: The three core verbs in depth, the content-addressed compile cache, and the durable daemon.
+description: The three core verbs in depth, the content-addressed compile cache, and the durable daemon's seven HTTP routes.
 ---
 
 # Compile, run, serve
 
-These are the three core verbs. `compile` freezes intelligence into deterministic artifacts. `run` drains once. `serve` runs the durable daemon. All three reach the model surface and need a live key (`OPENROUTER_API_KEY`) plus the `@openai/agents` and `zod` peer deps.
+These are the three core verbs. `compile` freezes intelligence into deterministic artifacts. `run` drains once. `serve` runs the durable daemon. All three reach the model surface and need a live key (`OPENROUTER_API_KEY`) plus the `@openai/agents` and `zod` peer deps. The keyless inspection commands ([observability](/cli/observability), [DevTools replay](/reactor-devtools/quickstart)) read what these verbs leave behind, so a single compiled state directory is the seam between the live side and the offline side.
 
 ## compile
 
@@ -19,7 +19,7 @@ reactor compile [--force] [--check]
 
 The cache key is `(contract-set fingerprint, SDK version, model id)`. Cost is never part of cache identity. An unchanged contract set recompiles at zero session cost, a cache hit.
 
-The IR persists a serializable spec. A fresh process re-lowers each node's canonicalizer with the keyless `compileNode(spec)` call, with no model and no network, to mount it. That re-lowering is why the offline observability commands work after a compile with no key present.
+The IR persists a serializable spec. A fresh process re-lowers each node's canonicalizer with the keyless `compileNode(spec)` call, with no model and no network, to mount it. That re-lowering is why the offline observability commands work after a compile with no key present. The programmatic equivalents are [`compileProject` and `runProject`](/sdk/run), the model-bearing boundary the CLI drives.
 
 ### Flags
 
@@ -45,7 +45,7 @@ reactor run
 ## serve
 
 ```sh
-reactor serve [--http <port>] [--concurrency <n>] [--poll-interval <ms>]
+reactor serve [--http <port>] [--host <addr>] [--concurrency <n>] [--poll-interval <ms>]
 ```
 
 `serve` boots the durable host and blocks on the continuity driver loop until it receives `SIGINT` or `SIGTERM`.
@@ -62,21 +62,31 @@ Each tick, the driver polls gateways for ingress, then polls continuity across e
 
 ### The HTTP surface
 
-`--http <port>` binds a zero-framework `node:http` server. The endpoints:
+`--http <port>` binds a zero-framework `node:http` server. It ships seven routes: one ingress and six read-only projections off the reactor's already-booted substrate. The GET routes never touch the model surface, so the surface is safe to poll for liveness and cost without spend.
 
-| Method and path | Purpose |
-| --- | --- |
-| `POST /trigger/<node>` | An external wake of `<node>` (the webhook or manual ingress), serialized behind that reactor's queue. |
-| `GET /health` | Liveness: boot done, reactor count. |
-| `GET /status` | The cost rollup plus node count and queue depth. |
-| `GET /cost` | The cost rollup (the headline observability). |
-| `GET /topology` | The node ids. |
-| `GET /receipts` | The ledger receipt stream. |
-| `GET /nodes/<node>` | A node's published fingerprints plus its last receipt. |
+| Method and path | Purpose | Shape |
+| --- | --- | --- |
+| `POST /trigger/<node>` | An external wake of `<node>` (the webhook or manual ingress), serialized behind that reactor's queue. | `{ reactor, triggered, receiptsAdded, data?, dataDelivered? }` |
+| `GET /health` | Liveness: boot done, reactor count. | `{ ok, reactors, reactor }` |
+| `GET /status` | The cost rollup plus node count and queue depth. | `{ reactor, nodes, queueDepth, cost }` |
+| `GET /cost` | The cost rollup (the headline observability). | `{ reactor, ...costRollup }` |
+| `GET /topology` | The node ids only -- a thin id list, not the wired DAG. | `{ reactor, nodes: NodeId[] }` |
+| `GET /receipts` | The full ledger receipt stream. | `{ reactor, receipts: Receipt[] }` |
+| `GET /nodes/<node>` | A node's published fingerprints, its last receipt, and a receipt count -- thin, not the node's full history. | `{ reactor, node, fingerprints, lastReceipt, receipts }` |
 
-The HTTP surface is namespaced per reactor under `/<name>/...`, with the prefix omitted for a single-reactor host. There is no auth in v1: the host is one process for one operator.
+Two of the GET routes are deliberately **thin**. `GET /topology` returns the node ids as a flat list, not the wired DAG with edges (use [`reactor topology`](/cli/observability) for the rendered graph). `GET /nodes/<node>` returns the node's published fingerprints, its single last receipt, and a count -- not the full per-node receipt history. `GET /receipts` is the one full projection: it streams the entire ledger.
 
-`POST /trigger/<node>` accepts an optional JSON body and goes through the reactor's serialization queue, so an HTTP trigger never overlaps an in-flight drain.
+The HTTP surface is namespaced per reactor under `/<name>/...`, with the prefix omitted for a single-reactor host. So a single-reactor host answers `GET /cost`, while a multi-reactor host answers `GET /sales/cost` and rejects an unprefixed `GET /cost` with a 404 telling you to prefix the path. There is no auth in v1: the host is one process for one operator.
+
+`POST /trigger/<node>` accepts an optional JSON body and goes through the reactor's serialization queue, so an HTTP trigger never overlaps an in-flight drain. The body is validated as JSON (a malformed body is a 400) and, when the node is a configured gateway, staged into the node's ingress so it actually reaches the render. The response's `dataDelivered` reports whether that staging happened.
+
+### Bind address and safety
+
+`--host <addr>` sets the bind address. The default is `127.0.0.1` -- loopback only.
+
+<Callout type="warn">
+v1 has no auth, and an unauthenticated `POST /trigger/<node>` can cause model spend. The server binds loopback by default for exactly this reason. Pass `--host 0.0.0.0` only behind a trusted proxy that adds its own auth; `serve` prints a warning when it binds to a non-loopback address.
+</Callout>
 
 ### Graceful shutdown
 
@@ -105,3 +115,8 @@ reactor trigger <node> [--data <json>|@file]
 `--data` accepts inline JSON or `@path` to a JSON file. The wake itself carries no payload slot, so the parsed data is validated and surfaced in the report. For a running daemon, `POST /trigger/<node>` is the equivalent ingress.
 
 There is no separate `pull` command. Ingest happens through the serve continuity cadence and through `POST /trigger/<node>`.
+
+<Cards>
+  <Card href="/sdk/run" title="The SDK run boundary" description="compileProject and runProject -- the model-bearing functions serve and run drive under the hood." />
+  <Card href="/cli/observability" title="Keyless observability" description="Read the receipts, cost, and topology these verbs leave behind, with no key present." />
+</Cards>

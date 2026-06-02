@@ -1,0 +1,215 @@
+---
+title: /internals
+description: The engine room -- the honest deep door. The reconciler-construction spine, the deep domain shapes, the deprecated Reactor*-prefixed port aliases, and the receipt/projection helpers. Stable-but-deep, distinct from the curated front door.
+---
+
+# `/internals`: the engine room
+
+`@openprose/reactor/internals` is the **honest deep door**. Every public name
+that is not on the curated front door (`.`), the `@openai/agents` escape hatch
+([`/agents`](/sdk/agents)), the substrate and ingress backends
+([`/adapters`](/sdk/adapters)), or the offline run-phase boundary
+([`/run`](/sdk/run)) re-homes here.
+
+Nothing was removed from the package. These names are simply not on the headline
+surface. If you are wiring a project from the [front door](/sdk/front-door) you
+will never import this subpath -- the facade, the assemblers, and the substrate
+factories already cover the 90% path. You reach for `/internals` only when you
+are re-hosting the reconciler loop by hand against your own ports, or reading the
+deep domain shapes the front door wraps.
+
+<Callout type="info">
+  Think of this as **stable-but-deep**, not unstable. The names here back the
+  same engine the front door drives; they are de-emphasized, not experimental.
+  But it is a wide surface, and the headline vocabulary on the
+  [front door](/sdk/front-door) is the one we curate for agents. Start there.
+</Callout>
+
+## What lives here
+
+`/internals` re-exports the whole engine, grouped by the design doc each module
+implements (`src/internals/index.ts`):
+
+| Group | Module | What it is |
+| --- | --- | --- |
+| The coordination spine | `../shapes` | The shared discriminated unions every other module reads (`SHAPES.md`). |
+| Cycle + predicate keep-home | `../cycle` | The cycle/predicate shapes (`SHAPES.md` §8). |
+| The world-model store | `../world-model` | The content-addressed store object (`architecture.md` §5.2, §10). |
+| The compiled canonicalizer | `../canonicalizer` | The per-node canonicalizer Forme froze (`architecture.md` §3.2). |
+| The compiled postcondition validators | `../postcondition` | The commit-gate validators (`architecture.md` §3.3). |
+| Forme | `../forme` | The compile-phase wiring (`architecture.md` §3.1, §6.3). |
+| The receipt ledger object | `../receipt` | The receipt builder and the ledger trail (`SHAPES.md` §4). |
+| The memo re-key + skip decision | `../memo` | The memo key and the skip disposition (`SHAPES.md` §3). |
+| Composition | `../composition` | Subscriptions-as-props, pins-as-read-isolation (§7). |
+| Forecast | `../forecast` | The continuity clock + self-recheck (`architecture.md` §3.5). |
+| Evidence resolution | `../evidence-plan` | Evidence-by-reference resolution (`delta.md` §A3.1). |
+| Surprise-cost + projection | `../cost`, `../projection` | The observable cost shapes + receipt projection (`delta.md` §A4). |
+| The run-phase reconciler spine | `../reactor` | The dumb reconciler loop (`architecture.md` §4.1). |
+| The injection boundary | `../adapters` | The adapter port contracts, including the deprecated `Reactor*`-prefixed aliases (`architecture.md` §5.3). |
+| The SDK assembler spine | `../sdk` | `createReactor` / `mountDag` internals. |
+
+These were nine separate doc-only subpaths in the pre-`0.3.0` surface
+(`/receipt`, `/cost`, `/forme`, `/evidence-plan`, `/memo`, `/forecast`,
+`/composition`, `/projection`, `/canonicalizer`). They held zero consumer usage
+as standalone import paths, so `0.3.0` folded them into one engine-room door. The
+load-bearing few names they carried -- `ATOMIC_FACET`, `verifyReceipt`,
+`verifyReceiptChain`, `Receipt` -- were **pulled forward** onto the
+[front door](/sdk/front-door); the rest stay reachable here. Only the import path
+changed. No name became unavailable.
+
+<Callout type="info">
+  `createSkippedReceipt` ships from both `../receipt` and `../memo`. `/internals`
+  pins the canonical `../receipt` builder over the `../memo` star-export, so the
+  name resolves to one implementation -- not a star-merge collision.
+</Callout>
+
+## The reconciler-construction spine
+
+This is the reason to be here: re-hosting the run-phase loop by hand against
+custom ports, instead of going through the [facade](/sdk/front-door) or
+[`runProject`](/sdk/run). The constructor takes injected ports and a **fixed**
+compiled topology and returns a handle:
+
+```ts
+import {
+  createReconciler,
+  type ReconcilerPorts,
+  type ReconcilerTopology,
+  type ReconcilerHandle,
+  inboundEdges,
+  COLD_START_ATOMIC_FINGERPRINT,
+} from "@openprose/reactor/internals";
+
+// Construct the dumb reconciler over injected ports + a fixed compiled topology.
+// No judge, no policy, no backstop -- the entire decision is fingerprint
+// comparison.
+const handle: ReconcilerHandle = createReconciler(ports, topology);
+```
+
+The topology is a **constructor input** (`createReconciler(ports, topology)`,
+`src/reactor/index.ts`), not mutable state -- which is exactly why the deferred
+fixpoint (topology-as-responsibility) attaches additively later: "an epoch
+*names* that fact" without reshaping the handle.
+
+The handle exposes the four drive verbs, sync and async:
+
+| Member | What it does |
+| --- | --- |
+| `reconcile(event)` | Handle one wake for one node: memo/skip, single-flight schedule, commit, propagate. Returns the disposition, the receipt written, and the downstream wakes to enqueue. |
+| `drain(initial)` | Drain a seeded queue of wakes to a fixpoint, honoring single-flight + coalescing + propagation. Returns the ordered per-node results. |
+| `reconcileAsync(event)` | The async sibling: awaits the one bounded LLM session. A wake delivered while a render is in flight marks the node dirty and collapses into exactly one coalesced follow-up -- never a second concurrent render, never a lost wake. |
+| `drainAsync(initial)` | The async fixpoint loop: `await`s each `reconcileAsync` fully before shifting the next event, preserving the sync path's exact ordering and one-render-in-flight guarantee. |
+
+The supporting names complete the loop you would hand-roll: `inboundEdges`
+resolves a node's subscribed edges off the topology; `memoKeyMoved`,
+`movedFacetsBetween`, and `propagationTargets` are the comparison + propagation
+helpers; and `COLD_START_ATOMIC_FINGERPRINT` (`asFingerprint("cold-start:empty")`)
+is the reserved cold-start atomic fingerprint a node carries before its first
+render. The full ledger-port (`ReceiptLedgerPort`) and world-model-port
+(`WorldModelStorePort`) contracts the handle reads through are here too.
+
+<Callout type="warn">
+  Most callers should **not** hand-host the reconciler. The
+  [facade](/sdk/front-door) wires `createReactor` + the
+  [run-phase compile](/sdk/run) for you and returns one typed handle. Reach for
+  `createReconciler` only when you genuinely own the ports -- a custom evidence
+  plan, an alternate persistence story, an embedding host that drives the loop
+  on its own cadence. See [the reconciler and receipts](/reactor/reconciler-and-receipts)
+  for the behavior you are taking responsibility for.
+</Callout>
+
+## The deprecated `Reactor*`-prefixed port aliases
+
+In the pre-`0.3.0` surface the adapter port types carried a `Reactor*` prefix.
+`0.3.0` made the short names the headline vocabulary -- `StorageAdapter`,
+`WorldModelStore`, `ClockAdapter` -- which is what [`/adapters`](/sdk/adapters)
+and the [`Substrate`](/sdk/adapters) record use. The original `Reactor*`-prefixed
+names are kept reachable from `/internals` as deprecated aliases
+(`src/adapters/types.ts`):
+
+```ts
+// The short name is the headline vocabulary used by Substrate;
+// the Reactor*-prefixed original is the deprecated alias, kept reachable here.
+export type StorageAdapter = ReactorStorageAdapter;
+// likewise: WorldModelStore = ReactorWorldModelStore,
+//           ClockAdapter    = ReactorClockAdapter
+```
+
+These are type aliases, not separate implementations -- a downstream still
+pinned to `ReactorStorageAdapter` keeps compiling. Prefer the short names in new
+code. Nothing was removed; the prefixed names are simply no longer the door you
+are pointed at.
+
+## The receipt and projection helpers
+
+Receipt **verification** lives on the [front door](/sdk/front-door)
+(`verifyReceipt` / `verifyReceiptChain`). The **proof-projection** helpers --
+deriving a sharable proof summary that avoids private payload fields -- live here,
+alongside the deep receipt shapes they operate on (`src/receipt/index.ts`,
+`src/projection/index.ts`):
+
+```ts
+import { verifyReceipt } from "@openprose/reactor";
+import {
+  inspectReceiptProof,
+  projectReceiptProof,
+  type LedgerReceipt,
+  type ReceiptProofInspection,
+} from "@openprose/reactor/internals";
+
+export function inspectStoredReceipt(receipt: LedgerReceipt) {
+  const verification = verifyReceipt(receipt);
+  if (!verification.ok) {
+    throw new Error(verification.errors.join("; "));
+  }
+  return inspectReceiptProof(receipt);
+}
+
+export function publicReceiptEvidence(proof: ReceiptProofInspection) {
+  const result = projectReceiptProof({ tier: "public", proof });
+  if (!result.ok) {
+    throw new Error(result.errors.join("; "));
+  }
+  return result.projection;
+}
+```
+
+`inspectReceiptProof` reads a stored receipt into a `ReceiptProofInspection`;
+`projectReceiptProof({ tier, proof })` projects that inspection down to a tier
+(for example `"public"`) that drops private payload fields. The verify split is
+deliberate: the everyday `verifyReceipt` is on the front door, and the deeper
+projection machinery -- bound to the receipt domain shapes -- stays in the engine
+room.
+
+<Callout type="info">
+  Honest scope, unchanged from the [receipt model](/reactor/reconciler-and-receipts):
+  in v1 *verified* means tamper-evident at the meaning layer and chain-consistent
+  -- not yet a cryptographic byte hash, and a receipt records *what* changed and
+  *why*, not *when* or by *whom*. `projectReceiptProof` projects what the chain
+  attests; it does not manufacture an audit fact the receipt does not yet carry.
+</Callout>
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="The front door"
+    href="/sdk/front-door"
+    description="The 90% path: the reactor() facade, the one typed Reactor handle, the assemblers, and the substrate factories. Start here unless you are re-hosting the loop."
+  />
+  <Card
+    title="The reconciler and receipts"
+    href="/reactor/reconciler-and-receipts"
+    description="The behavior the reconciler spine implements -- the memo key, single-flight, coalescing, the receipt commit, and what signed means in v1."
+  />
+  <Card
+    title="/adapters"
+    href="/sdk/adapters"
+    description="The Substrate record and the short-name port contracts these Reactor*-prefixed aliases back."
+  />
+  <Card
+    title="/run"
+    href="/sdk/run"
+    description="The offline boundary -- compileProject / runProject -- the supported way to drive the same engine without hand-hosting the reconciler."
+  />
+</Cards>

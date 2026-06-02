@@ -16,7 +16,7 @@ reactor-devtools --example <name> --copy-to <dir> [--force]        # seed a samp
 | Argument / option | Default | Effect |
 | --- | --- | --- |
 | `<state-dir>` | _(required unless `--example`)_ | A saved Reactor state directory (receipts + `compile/topology.json`). |
-| `--example <name>` | -- | Replay a fixture **shipped in the package** by name -- no path needed. The keyless proof from the README (e.g. `--example masked-relay`). |
+| `--example <name>` | -- | Replay a fixture **shipped in the package** by name -- no path needed, works after a global install from any cwd. Six fixtures ship: `masked-relay`, `surprise-cost`, `agent-observatory`, `inbox-triage`, `monorepo-ci`, `research-tree`. The keyless proof from the README is `--example masked-relay`; the "cost scales with surprise" thesis is `--example surprise-cost`. |
 | `--copy-to <dir>` | -- | Copy the bundled `--example` fixture into `<dir>` so you have a real state-dir on disk to inspect or replay. Refuses a non-empty / existing dir unless `--force`. |
 | `--force` | -- | Overwrite a non-empty / existing state-dir on `--copy-to`. |
 | `-p`, `--port <n>` | `4555` | Port to listen on. Must be an integer. |
@@ -91,13 +91,13 @@ Exported surface:
 | `readTopology`, `openWorldModels`, `readNodeWorldModel`, `versionForFrame`, `verifyReceiptChain` | Lower-level read helpers over the state-dir. |
 | Types | `OpenStateDirOptions`, `OpenedStateDir`, `ReplaySnapshot`, `ReceiptFrame`, `EdgeLight`, `NodeView`, `EdgeView`, `CostRollupView`, `NodeWorldModelView`, `WorldModelFileView`, `DevToolsServer`, `DevToolsServerOptions`. |
 
-The ledger-shaping primitive itself -- `createReplaySession` -- lives in the SDK (`@openprose/reactor/sdk`), not here, so other tools can shape a trail without this package. See [State dirs and replay](/reactor-devtools/state-dirs-and-replay).
+The ledger-shaping primitive itself -- `createReplaySession` -- lives in the SDK, re-exported from the curated `.` front door (`@openprose/reactor`), not here, so other tools can shape a trail without this package. See [Front door](/sdk/front-door) and [State dirs and replay](/reactor-devtools/state-dirs-and-replay).
 
 ## Stack and dependencies
 
 | | |
 | --- | --- |
-| Version | `0.1.0` |
+| Version | `0.2.0` |
 | Bin | `reactor-devtools` → `dist/cli.js` |
 | Runtime dependency | `@openprose/reactor` only |
 | Server | Node built-in `node:http` (no web framework) |

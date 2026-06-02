@@ -1,0 +1,151 @@
+---
+title: Setup
+description: One ordered path for agents onboarding on behalf of a user -- keyless proof first, then init, doctor, compile, and serve. Where contracts live and what each step needs.
+---
+
+# Setup
+
+This is the one ordered path. If you are an agent onboarding on behalf of a user, follow it top to bottom: prove the idea with no key and no spend, scaffold and inspect entirely offline, then go live only when the user is ready to reach a model.
+
+The binary is `reactor`. The keyless replay viewer is `reactor-devtools`. Both ship from npm and run locally.
+
+<Callout type="info">
+**Trust before spend.** Nothing below reaches a model provider or costs a token until the final "go live" step. Steps 1 through 3 are fully offline -- you can earn the user's trust by showing the whole shape first, with no key in the environment.
+</Callout>
+
+## 1. Prove the thesis -- keyless, no model call
+
+Run a saved sample run and read the per-node dispositions, the receipt counts by surprise cause, the token cost rollup, and the chain verify. No install, no key, no spend:
+
+```bash
+npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --describe
+```
+
+```text
+dispositions  rendered=46 · skipped=31 · failed=0
+surprise-cause  external=8 · input=69   (a.k.a. wake-cause)   ← receipt COUNTS, 77 total
+
+COST ROLLUP  (tokens)
+  total       fresh=27180 tokens · reused=12840 tokens · reuse=32%
+    external  receipts=  8 fresh=   1080 tokens reused=840 tokens
+    input     receipts= 69 fresh=  26100 tokens reused=12000 tokens
+CHAIN-VERIFY ok
+```
+
+The `surprise-cause` line counts receipts by what woke them; the cost rollup below it is the actual token spend, where `fresh` is what each surprise cost and `reused` is what memoization saved. That is "cost scales with surprise" -- checkable, with no key and no spend.
+
+Prefer the browser? Drop `--describe` and `reactor-devtools --example masked-relay` boots an animated DAG viewer at a localhost URL: nodes flash on render, dim-pulse on memo-skip, with a live cost meter.
+
+## 2. Install -- local-first
+
+The keyless step above needs no install. For the full CLI, prefer a project-local install (no root, no global collisions):
+
+```bash
+npm install @openprose/reactor @openprose/reactor-cli @openprose/reactor-devtools
+# then call the binaries with `npx reactor …` / `npx reactor-devtools …`
+```
+
+`@openprose/reactor` is the SDK engine the CLI drives; it is a real dependency of `@openprose/reactor-cli`, so the install above just makes the SDK and the replay viewer explicit. None of these pull a model provider or a key.
+
+<Callout type="info">
+**Local install means `npx`.** The bare `reactor …` / `reactor-devtools …` commands below assume the binaries are on your `PATH` (a global install). After a project-local install, prepend `npx` -- for example `npx reactor init my-project`. The keyless `npx -p @openprose/reactor-devtools …` line already does this.
+</Callout>
+
+A global install (`npm i -g …`) is an alternative, but on Linux/WSL it can fail with `EACCES` and may collide with other tools' binaries. Prefer the local install above.
+
+## 3. Scaffold and inspect -- keyless
+
+Everything here runs offline.
+
+```bash
+reactor init my-project && cd my-project
+reactor doctor                          # what's present + the exact fix for anything missing
+reactor compile --check; echo "exit=$?" # offline; exits 1 if the contract set is STALE (CI-wireable)
+```
+
+`reactor init` writes a minimal, compilable project: a gateway, a responsibility that subscribes to it, a `reactor.yml`, a `.gitignore`, and a short README. It refuses to overwrite existing files by default; pass `--force` to clobber a directory that already holds scaffold files.
+
+`reactor doctor` runs fully offline and reports the node version, SDK resolvability, live-key presence (it never prints the key), live-dep presence, the sandbox mode, whether the state directory is writable, and the compiled-IR freshness.
+
+`reactor compile --check` is the offline freshness gate. It exits non-zero when the IR cache is stale -- which it is right after `init`, before the first real compile -- so it wires cleanly into CI without ever touching a model.
+
+### Where contracts live
+
+Author your OpenProse contracts as `*.prose.md` files under the scaffold's `src/` directory:
+
+- one `kind: responsibility` per standing goal, carrying its `### Maintains` (the world-model schema it keeps current), `### Requires` (the upstream facets it subscribes to), and `### Continuity` (its wake source);
+- optional `kind: gateway` contracts for ingress;
+- optional `kind: function` contracts for stateless helpers.
+
+`src/` is authored intent; the compiler writes its frozen output into `dist/`, and run state (world-models and the signed receipt ledger) lands under the state directory. You write `src/`; Reactor owns the rest.
+
+<Callout type="info">
+**Structure is subscription.** You never wire the graph by hand. Forme -- the compile-time wiring layer -- matches each `Requires.<facet>` to the `Maintains.<facet>` that produces it and draws the subscription edge. The DAG assembles itself from the contracts. See [contracts](/openprose/contracts).
+</Callout>
+
+## 4. Go live -- needs a model key
+
+These steps reach the model surface. A keyless reader can stop at step 3. To go live, set `OPENROUTER_API_KEY` and add the two optional live peers:
+
+```bash
+npm i @openai/agents zod              # the two optional live peers
+reactor compile                       # Forme wires the DAG; freezes per-node canonicalizers
+reactor serve --http 8080             # drive the scaffold's static gateway to a real receipt
+reactor-devtools .reactor --describe  # replay YOUR live run's ledger
+```
+
+`reactor compile` runs the intelligent compile sessions once and freezes them into the content-addressed IR cache. An unchanged contract set recompiles at zero session cost because the cache key is content-addressed.
+
+<Callout type="warn">
+**Use `serve`, not `run`, for the scaffold.** The scaffold's `inbox` gateway uses a `static` connector: its seeded items are ingested by the `serve` continuity loop, which polls the gateway and stages the seeded arrivals -- moving the inbox fingerprint and waking `digest`. `reactor run` is the one-shot drain for graphs whose connectors emit on their own; on a static scaffold it would boot, find nothing newly arrived, and exit without rendering.
+</Callout>
+
+`serve` boots the durable host, runs the continuity loop, and binds the built-in HTTP surface; it stays up until you stop it with Ctrl-C. In another shell you can read the trail and the standing cost:
+
+```bash
+reactor status                 # standing compile cost beside the run cost
+reactor receipts list          # the gateway + digest receipts
+reactor receipts cost          # cost rolled up by surprise_cause
+```
+
+## Honest status
+
+In the spirit of the receipts, a few things are openly pending. They do not block the path above, but you should onboard the user knowing them:
+
+- **Benchmarks are pending on purpose.** We publish the harness before the numbers and will not imply a measured speedup we have not run. The proof you can check today is the keyless replay in step 1.
+- **Signer caveat.** In v1, *signed* means tamper-evident at the meaning layer and chain-consistent -- not yet a cryptographic byte hash. `reactor receipts verify` proves the receipt chain is consistent but does not yet bind the world-model artifacts.
+- **No timestamp, no actor yet.** A v1 receipt records *what* changed and *why*, but not *when* it was committed or *who* committed it -- so the ledger is a verifiable record of decisions, not yet a substitute for an external audit log.
+- **The fixpoint (topology-as-responsibility) is specified and deferred.** Facet inference and ledger compaction are named roadmap.
+
+This honesty is the point. The harness is young and should be used with caution. There is nothing new here -- we are applying classical engineering paradigms to our brave new world, and finding that the wisdom of the ancients still applies.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="The CLI quickstart"
+    href="/cli/quickstart"
+    description="The same init to compile to serve flow with deeper notes on each verb and the static-gateway behavior."
+  />
+  <Card
+    title="Contracts"
+    href="/openprose/contracts"
+    description="The authored surface: Markdown contracts, the five kinds, and the load-bearing sections under src/."
+  />
+  <Card
+    title="Keyless replay (DevTools)"
+    href="/reactor-devtools/quickstart"
+    description="Inspect any committed ledger -- yours or an example -- with no key and no spend."
+  />
+  <Card
+    title="SDK API Reference"
+    href="/sdk"
+    description="Drive Reactor programmatically: the curated front door, the @openai/agents passthrough, and the substrate seams."
+  />
+</Cards>
+
+To author your first real contract, copy a shape from [`skills/open-prose/examples/`](https://github.com/openprose/prose/tree/main/skills/open-prose/examples) -- each ships a committed, chain-verifiable `replay/` you can read keyless. When the docs and the [SKILL](https://github.com/openprose/prose/tree/main/skills/open-prose) disagree, trust the skill: it is the source of truth for the language.
+
+---
+
+*The conversation always ends. The responsibility shouldn't have to.*

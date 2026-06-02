@@ -1,0 +1,370 @@
+---
+title: The front door (`.`)
+description: The curated `@openprose/reactor` entry point -- the reactor() facade, the one typed Reactor handle, the assemblers, the substrate, observe(), and the driver vocabulary.
+---
+
+# The front door (`.`)
+
+`import { ... } from "@openprose/reactor"` is the one obvious entry point, for
+engineers and for coding agents alike. It is a **deliberate curation** -- roughly
+45 headline names -- not a 767-name firehose. The deep domain shapes, the
+reconciler-construction spine, and the nine ex-doc-only domains all re-home under
+[`/internals`](/sdk/internals); nothing was removed. The escape hatches live at
+[`/agents`](/sdk/agents), [`/adapters`](/sdk/adapters), and
+[`/run`](/sdk/run).
+
+Read this page top to bottom and you have the whole 90% path: one call takes a
+directory of `.prose.md` contracts all the way to a booted, reconciling reactor,
+and hands you a typed handle you drive and observe without a single cast.
+
+<Callout type="info">
+The front door is **keyless at load**. Importing `reactor` never pulls a model
+provider -- the model-bearing run phase is reached through a dynamic `import("../run")`
+inside the facade body (the [offline boundary](/sdk/run)). You can `import` and
+inspect before you ever set a key.
+</Callout>
+
+## Tier 1 -- the `reactor()` facade
+
+The one batteries-included top rung. `reactor(projectPath, options?)` compiles the
+`.prose` project, assembles a durable reactor over its substrate, optionally boots
+it to a fixpoint, and returns the typed [`Reactor`](#the-one-typed-reactor-handle)
+handle. It is pure sugar: everything it does is reachable one rung down
+(`compileProject` + `createReactor` + `boot()`), and **its return value is the
+rung-1 handle**, so there is never a second parallel API.
+
+The facade returns a **record**, not the handle directly -- destructure it:
+
+```ts
+import { reactor, textFile } from "@openprose/reactor";
+
+const { reactor: r } = await reactor("./my-project", { directory: "./state" });
+// compile the .prose project, assemble a durable reactor over ./state, boot to a
+// fixpoint (cold nodes render once; warm nodes memo-skip), hand back a live handle.
+
+console.log(r.view.cost);          // { fresh, reused, byCause, byNode, total } -- the hero metric
+console.log(r.view.dispositions);  // { rendered, skipped, failed, coalesced }
+
+await r.ingest("source", { data: { "in.txt": textFile("hello") } });
+// deliver input, reconcile to a fixpoint, re-render only what the new input moved
+```
+
+This snippet matches the test-verified facade docstring in
+`sdk/facade.ts:158-164`. The `{ reactor: r }` destructure is the idiom -- the
+result also carries `bootResults` and `pollConnectors`.
+
+### `ReactorFacadeResult`
+
+```ts
+export interface ReactorFacadeResult {
+  readonly reactor: Reactor;                       // the typed handle (drive / observe / schedule)
+  readonly bootResults: readonly ReconcileResult[]; // the boot sweep's per-node results ([] when boot: false)
+  readonly pollConnectors: PollConnectors;          // drive one poll of every armed connector (no-op when none)
+}
+```
+
+### `ReactorOptions`
+
+Every field is a documented desugaring of a rung below.
+
+| Field | Type | What it does |
+|---|---|---|
+| `directory` | `string` | Durable truth + receipts. Omit for in-memory (ephemeral; tests/replay). |
+| `mode` | `"run" \| "inspect"` | `"inspect"` is the **keyless posture** -- compiles, assembles, and boots without loading a render provider. |
+| `boot` | `boolean` | Run the boot cold-miss sweep after assembly. Default `true`. |
+| `render` | `RenderOptions & { buildRender?, ... }` | THE `@openai/agents` escape hatch, forwarded verbatim to every render. See [`/agents`](/sdk/agents). |
+| `adapters` | `ReactorAdapters` | The backends to swap in (a `Partial` substrate + the model/ingress seams). |
+| `schedule` | `ScheduleOptions` | Arm the self-driven continuity cadence off the handle's topology. |
+| `compile` | `Omit<CompileProjectInput, "contractsDir" \| "contracts">` | Compile-phase knobs forwarded to `compileProject` (provider/model/skill, per-step overrides). |
+
+### `ReactorAdapters`
+
+The backends the facade swaps in. Every substrate field is **optional** -- the
+facade defaults the rest (filesystem when `directory` is set, in-memory
+otherwise):
+
+```ts
+export interface ReactorAdapters {
+  readonly clock?: ClockAdapter;            // defaults to the system clock
+  readonly storage?: StorageAdapter;        // the ledger's append-only trail
+  readonly worldModel?: WorldModelStore;    // defaults to a store over `directory`
+  readonly ledger?: MutableReceiptLedger;   // defaults to the storage-derived durable ledger
+  readonly connectors?: readonly ConnectorAdapter[]; // arm ingress sources (§ Ingress, /adapters)
+  readonly renderBackend?: RenderBackend;   // the model-injection seam (/agents)
+}
+```
+
+The `renderBackend` and `connectors` seams are the live, documented injection
+points; the substrate fields below are the persistence answer.
+
+## The one typed `Reactor` handle
+
+The return of `reactor()`, `createReactor()`, and `runProject()` is **one**
+interface -- one object graph at multiple altitudes, never two parallel APIs.
+Before `0.3.0` the assembler returned a nested `.dag`, so a driver cast to reach
+`store`/`ledger`; the typed handle makes those first-class and the casts vanish.
+
+```ts
+export interface Reactor {
+  // ── drive -- async-by-default (the live path) ──
+  ingest(node: string, input?: IngestInput): Promise<readonly ReconcileResult[]>;
+  tick(node: string): Promise<readonly ReconcileResult[]>;
+  drain(seeds: readonly WakeEvent[]): Promise<readonly ReconcileResult[]>;
+  boot(): Promise<readonly ReconcileResult[]>;
+
+  // ── observe -- first-class read accessors (no casts) ──
+  readonly view: ReactorView;                            // the one read-and-rollup surface
+  onReceipt(cb: (receipt: LedgerReceipt) => void): () => void; // the ledger-is-telemetry tap
+  readonly ledger: MutableReceiptLedger;
+  readonly store: WorldModelStore;
+  readonly clock: ClockAdapter;
+  readonly topology: ReconcilerTopology;
+
+  // ── self-driven cadence -- wired off the handle ──
+  scheduler(readFreshness: NodeFreshnessReader, nodes: readonly string[]): AsyncContinuityScheduler;
+
+  // ── sync drive -- the deterministic test path, behind an explicit door ──
+  readonly sync: SyncDriveSurface;
+}
+```
+
+A few facts that earn the handle its keep:
+
+- **Async-by-default.** A live render *is* one bounded LLM session = one `await`.
+  A synchronous render is trivially an already-resolved promise, so the async
+  verbs subsume the sync ones losslessly. The synchronous verbs (the deterministic
+  fake-render / test path) are preserved verbatim behind `handle.sync` -- never
+  amputated, just demoted from co-equal to a named door.
+- **`view` re-derives on each read** off the live ledger, so a fresh read always
+  reflects the current trail. See [observe](#observe-one-read-and-rollup-surface).
+- **`onReceipt` is the telemetry tap.** It fires for every committed receipt --
+  `rendered` (real spend), `skipped` (memo hit), and `failed` -- across every
+  drive verb, and returns an unsubscribe function.
+- **`topology` is load-bearing.** It threads the `scheduler`, and it reserves the
+  `createEpochDriver` seam (see [honest status](#honest-status)).
+- **The full reconciler primitive is NOT on the handle.** Re-hosting the loop by
+  hand is engine-room altitude; reach it via [`/internals`](/sdk/internals).
+
+### `IngestInput` -- the `{ wake }` vs `{ data }` rule
+
+```ts
+export interface IngestInput {
+  readonly wake?: Wake;             // deliver a raw wake (the advanced path)
+  readonly data?: WorldModelFiles;  // STAGE a payload, then fire a memo-MISS wake (requires an armed stager)
+}
+```
+
+The bare `{ wake }` form delivers a raw wake. The `{ data }` form folds the
+phantom-ingress stage-and-move dance into one call: the payload is staged into the
+node's `<node>::ingress` truth -- moving its `input_fingerprints` -- and then a
+memo-MISS external wake fires so the node re-renders reading the staged input.
+
+The `{ data }` form **requires an armed ingress stager**. The `reactor()` facade
+wires one (augmenting the topology with each node's phantom-ingress edge). A handle
+assembled without a stager throws a legible error on `{ data }` rather than
+silently dropping the payload -- deliver a raw `{ wake }` instead.
+
+## Tier 2 -- the assemblers (the rungs below the facade)
+
+When you need to mount a topology by hand -- a custom driver, a re-host of the
+loop, an offline harness -- the assemblers are the rungs the facade desugars onto.
+All return (or feed) the same `Reactor` handle.
+
+- **`createReactor(input)`** -- the durable keystone. Wires a `Substrate`
+  (clock + storage + world-model + ledger) and the per-node render bodies into the
+  run-phase surface and returns the typed handle. Take a `Substrate` (or a
+  `Partial<Substrate>`; missing pieces default), a compiled `topology`, and the
+  per-node `mounts` / `asyncMounts`. Restart-survival is real: re-`createReactor`
+  over the same storage + directory and the durable ledger re-derives every node's
+  last receipt, so `boot()` memo-skips the unchanged nodes.
+- **`mountDag(input)`** -- the lower assembler. Wires the dumb reconciler over a
+  world-model store + a receipt ledger and exposes the drive verbs. `createReactor`
+  is the durable wrapper around it.
+- **`renderAtom(input)` / `renderAtomAsync(input)`** -- one render of one node:
+  `(contract, evidence, prior world-model) -> (RenderProduct | RenderFailure)`. The
+  render atom is the smallest unit -- the same `(contract, evidence, prior) -> (new
+  world-model, receipt)` step the [OpenProse foundation](/openprose) declares,
+  realized as a function.
+
+```ts
+export {
+  createReactor, type CreateReactorInput,
+  mountDag,      type MountDagInput, type MountedDag, type NodeMount,
+  renderAtom, renderAtomAsync,
+               type RenderAtomInput, type RenderContext, type RenderProduct, type RenderFailure,
+} from "@openprose/reactor";
+```
+
+## Tier 2 -- the durable substrate
+
+Persistence has **one** answer: the `Substrate` record. `fileSystemSubstrate`
+bakes in the storage to ledger restart-survival derivation; `inMemorySubstrate` is
+the ephemeral test/replay form.
+
+```ts
+import { fileSystemSubstrate, inMemorySubstrate, type Substrate } from "@openprose/reactor";
+
+export interface Substrate {
+  readonly clock: ClockAdapter;
+  readonly storage: StorageAdapter;
+  readonly worldModel: WorldModelStore;
+  readonly ledger: MutableReceiptLedger;
+}
+
+const durable = fileSystemSubstrate({ directory: "./state" }); // ledger derived over the same storage
+const ephemeral = inMemorySubstrate();                          // tests, replay
+```
+
+The blessed à-la-carte leaf factories stay on the front door for custom wiring and
+the spread-override idiom:
+
+```ts
+// one storage swap, the rest of the durable substrate intact
+const substrate = { ...fileSystemSubstrate({ directory }), storage: myStorage };
+```
+
+Available leaf builders: `createFileSystemStorageAdapter`,
+`createMemoryStorageAdapter`, `createFixedClockAdapter`,
+`createSystemClockAdapter`, `createFileSystemReceiptLedger`,
+`createFileSystemWorldModelStore`, `createInMemoryWorldModelStore`. The full set of
+backend ports and their custom-backend contracts lives at
+[`/adapters`](/sdk/adapters).
+
+## `observe()` -- one read-and-rollup surface
+
+`observe(source)` is the SDK's **single** read-and-rollup entry point. The
+"fresh-vs-reused" hero metric -- _cost scales with surprise, not the clock_ -- is
+computed **here, once**, and every consumer (the `serve` line, the HTTP `/cost`
+endpoint, the observability commands, the DevTools meter) reads off this one shape
+rather than re-implementing the rollup.
+
+```ts
+import { observe, type ReactorView, type CostRollup } from "@openprose/reactor";
+
+// FOUR source forms share ONE rollup:
+observe(r);                          // a live Reactor handle
+observe({ ledger });                 // a replayed trail
+observe({ receipts });               // a trail array
+observe({ results });                // a synchronous drive return
+```
+
+```ts
+export interface ReactorView {
+  readonly receipts: readonly LedgerReceipt[];
+  readonly byNode: ReadonlyMap<string, readonly LedgerReceipt[]>;
+  readonly dispositions: Record<ReconcileDisposition, number>; // rendered/skipped/failed/coalesced, zero-filled
+  readonly cost: CostRollup;
+  verifyChain(): { ok: boolean; errors: readonly string[] };
+}
+
+export interface CostRollup {
+  readonly fresh: number;  // tokens surprise actually drove (a moved fingerprint = a real render)
+  readonly reused: number; // memo-hit / skipped-render tokens
+  readonly byCause: Readonly<Record<WakeSource, CostBucket>>; // per surprise_cause
+  readonly byNode: Readonly<Record<string, CostBucket>>;      // per node
+  readonly total: CostBucket;
+}
+```
+
+The single `CostRollup` carries **both** bucketings -- `byCause` (which wake source
+drove the spend) and `byNode` (which node spiked) -- so nothing is lost to a parallel
+rollup. `verifyChain()` is the tamper / chain-consistency check (see the honest
+note on [what "signed" means](/reactor/reconciler-and-receipts)).
+
+For the DevTools replay viewer, `createReplaySession` shapes a saved trail (per-receipt
+moved-facet diff + cumulative rollup) and is re-exported from this front door (and
+from [`/run`](/sdk/run)).
+
+## The driver vocabulary
+
+The names a driver actually reaches for, all on the front door.
+
+### Branded identity
+
+`NodeId`, `Facet`, and `Fingerprint` are branded strings -- the surface is
+self-documenting and agent-correct (the `"*"`-never-propagates and
+`surprise_cause !== wake.source` footguns become compile errors). The ergonomic
+boundary keeps author literals working: every **input** position accepts a plain
+`string` (via `NodeIdInput` / `FacetInput`), so `r.ingest("source")` still
+compiles, while everything the SDK **returns** is branded and tracked. `Fingerprint`
+is branded hard -- consumers never author it.
+
+```ts
+import { asNodeId, asFacet, ATOMIC_FACET } from "@openprose/reactor";
+import type {
+  NodeId, NodeIdInput, Facet, FacetInput, Fingerprint, FingerprintMap,
+} from "@openprose/reactor";
+
+asNodeId("scout-desire"); // string -> NodeId
+asFacet("status");        // string -> Facet
+ATOMIC_FACET;             // the reserved whole-truth token every FingerprintMap carries
+```
+
+### Wake constructors
+
+One event type, three sources. The constructors build the `{ source, refs }` wake
+a driver hands to `ingest` / the reconciler, so the literal is never re-derived by
+hand at every ingress / continuity-fire site.
+
+```ts
+import { inputWake, selfWake, externalWake } from "@openprose/reactor";
+
+externalWake();          // { source: "external", refs: [] } -- a fresh external arrival
+inputWake(...refs);      // an upstream input moved
+selfWake(...refs);       // the continuity cadence fired
+```
+
+### Files, receipts, ingress
+
+```ts
+import {
+  files, textFile, jsonFile,       // build the WorldModelFiles a node reads/writes
+  verifyReceipt, verifyReceiptChain, // the chain-consistency check (the v1 "signed" meaning)
+  ingressSourceFor, augmentTopologyWithIngress, buildIngressStager, armConnectors,
+} from "@openprose/reactor";
+```
+
+`textFile` / `jsonFile` are the `{ data }` payload builders you saw in the facade
+snippet. `verifyReceipt` / `verifyReceiptChain` verify the per-node `prev`-linked
+receipt chain -- chain-consistency, not a cryptographic byte hash (see [honest
+status](#honest-status)). The ingress building blocks are what
+`reactor({ adapters: { connectors } })` wires; reach for them directly only when
+hand-rolling a poll loop over the lower `pollGateway` / cursor primitives at
+[`/adapters`](/sdk/adapters).
+
+### Reconcile vocabulary + types
+
+```ts
+import type {
+  ReconcileResult, ReconcileDisposition, RenderOutcome, WakeEvent,
+  Receipt, LedgerReceipt, Cost, Wake, WakeSource,
+} from "@openprose/reactor";
+```
+
+## Honest status
+
+Honesty is the trust mechanism -- what is built, and what is not, stated plainly.
+
+<Callout type="warn">
+- **`verifyReceipt` / `verifyChain()` check chain-consistency, not crypto.** The
+  v1 "signed" meaning is tamper-evident `prev`-linked chaining over a content-addressed
+  trail -- not a cryptographic byte-hash signature. The `SignerPort` is declared so the
+  crypto milestone is a pure backend swap, but no crypto signer ships in `0.3.0`.
+- **No benchmark numbers are asserted** anywhere in these docs. The "cost scales
+  with surprise" rollup is the mechanism; published numbers are pending.
+- **The epoch driver is reserved, not built.** The handle exposes everything a
+  rollover loop needs (`topology` + `drain` + `onReceipt`), so `createEpochDriver`
+  lands additively later. The `Reserved*` epoch-driver shapes are type-only -- no
+  value ships in `0.3.0`.
+- **The fixpoint is specified and deferred.** It attaches additively to this
+  surface (a relocated `input_fingerprints` memo key, no `Receipt`-field change).
+</Callout>
+
+## Where to go next
+
+<Cards>
+  <Card href="/sdk/agents" title="The `@openai/agents` escape hatch" description="The full layered RenderOptions passthrough -- every model knob reachable, the reserved fields type-enforced, the render-backend swap." />
+  <Card href="/sdk/adapters" title="Adapters and the injection boundary" description="The Substrate ports, custom backends, and the gateway-ingress / record-replay / passthrough toolkit." />
+  <Card href="/sdk/run" title="The offline boundary (`/run`)" description="compileProject / runProject and the type-only /run/types mirror -- how the keyless build stays keyless." />
+  <Card href="/openprose" title="The OpenProse foundation" description="The paradigm the SDK runs: declare outcomes in Markdown contracts, render one atom at a time." />
+</Cards>

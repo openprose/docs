@@ -1,52 +1,53 @@
 ---
-title: OpenProse Documentation
-description: Reactor -- React.memo for expensive LLM work. Cost scales with surprise, not the clock.
+title: OpenProse
+description: One system, two layers. OpenProse is the paradigm you author in -- declare the outcomes you want kept true, in Markdown. Reactor is the harness that keeps them true, so cost scales with surprise, not the clock.
 ---
 
-# Reactor: `React.memo` for expensive LLM work
+# OpenProse
 
-**Reactor (`@openprose/reactor`) is a small, open-source harness for AI work that has to _keep being true_ after a chat ends.**
+**OpenProse is a programming paradigm: you _declare the outcomes you want kept true_ -- an ideal world-model -- instead of issuing instructions.** You write that intent as familiar structured **Markdown contracts** (`*.prose.md`), with optional imperative **ProseScript** fulfillment plans for when order, loops, or exact choreography matter. The render function is not deterministic byte code -- it is declarative Markdown fulfilled by a bounded agent session. OpenProse shipped first as a Skill and runs on **any Prose-Complete agent harness**.
 
-You declare the truths you want kept current as OpenProse **Responsibilities** -- standing goals. Reactor keeps a composed **world-model** up to date against a changing world, re-renders only the responsibilities whose inputs actually moved, and leaves a content-addressed **receipt** behind every decision.
+**Reactor (`@openprose/reactor`) is the harness built to run OpenProse** -- and the recommended **fast path**. It keeps a composed **world-model** up to date against a changing world, re-rendering only the declared facets whose upstream inputs actually moved (memoized agent sessions wired into a DAG), and leaves a content-addressed **receipt** behind every decision.
+
+These are not two systems. They are **one system, two layers that fit together**: OpenProse is the language you author in; Reactor is the deterministic host that serves it efficiently. The thesis Reactor works toward:
+
+> **Inference cost that scales with surprise, not wall-clock time.**
 
 In plain terms: you declare what should stay true, the system watches the world, and it does expensive model work **only when something material actually moved**.
 
+## Start here
+
 <Cards>
   <Card
-    title="Reactor DAG"
+    title="Start with OpenProse"
+    href="/openprose"
+    description="The paradigm: declare an ideal world-model in Markdown contracts. The render atom, the kinds, and why a contract is a typed function where a bare prompt is `any`."
+  />
+  <Card
+    title="Run it with Reactor"
     href="/reactor"
-    description="Compile a .prose project into a content-addressed DAG and run it so cost scales with surprise."
+    description="The deterministic harness built to run OpenProse contracts. Compile once into a content-addressed DAG, run forever so cost scales with surprise."
+  />
+  <Card
+    title="SDK API Reference"
+    href="/sdk"
+    description="The full @openprose/reactor 0.3.0 surface: the curated front door, the typed Reactor handle, and the six reasoned entrypoints."
   />
   <Card
     title="Reactor CLI"
-    href="/cli/overview"
-    description="Compile a .prose project and serve it as a durable, cost-observable reactor daemon."
+    href="/cli/quickstart"
+    description="The shell driver for the SDK. init, doctor, compile, serve -- scaffold a project and run it as a durable, cost-observable daemon."
   />
   <Card
-    title="Reactor DevTools"
+    title="DevTools (keyless replay)"
     href="/reactor-devtools"
-    description="Replay a saved run and watch the render/skip/cost trail -- keyless, no model call."
+    description="Replay a saved run and watch the render/skip/cost trail -- keyless, no model call, no spend."
   />
 </Cards>
 
-## If you know React, you already know the shape
-
-Substitute three nouns:
-
-| React | Reactor |
-| --- | --- |
-| Component | **Responsibility** -- a declared standing goal |
-| DOM | **World-model** -- the maintained truth, on disk, passed by pointer |
-| `render()` | **A bounded LLM session** that computes the next world-model |
-| props | **Subscriptions** to other responsibilities' outputs |
-| `React.memo` (skip if props unchanged) | **Skip the render if subscribed inputs haven't moved** |
-| Manual dependency wiring | **Forme** -- the graph wires itself from declared contracts |
-
-The reconciler that decides _whether to wake_ is deliberately **dumb and deterministic** -- there is **no judge step**. The intelligence is frozen ahead of time, at compile, into a per-node canonicalizer and the Forme wiring. The memo key has no clock in it.
-
 ## The shape of a contract
 
-A Reactor program is Markdown with a contract. A **responsibility** declares what it subscribes to (`### Requires`) and the truth it keeps current (`### Maintains`):
+You author **Responsibilities** -- standing goals, written as Markdown contracts. A responsibility declares what it subscribes to (`### Requires`) and the truth it keeps current (`### Maintains`):
 
 ```markdown
 ---
@@ -70,40 +71,56 @@ account carries a `valid_until`. Postcondition: every flagged account
 cites a corroborating signal.
 ```
 
-`### Maintains` is the world-model **schema** doing four jobs at once: it is a **type**, a **canonicalization spec** (what's material vs. immaterial, how things normalize), an optional set of **facets** (named sub-truths a consumer can subscribe to one at a time), and a set of **postconditions** that compile to commit-gate validators. The compile phase lowers it into a deterministic canonicalizer; at run time the reconciler only ever _compares_ fingerprints. The fingerprint moves iff the material content moves -- so a re-poll that returns the same truth costs nothing.
+`### Maintains` is the world-model **schema** doing four jobs at once: it is a **type**, a **canonicalization spec** (what is material vs. immaterial, how things normalize), an optional set of **facets** (named sub-truths a consumer can subscribe to one at a time), and a set of **postconditions** that compile to commit-gate validators. _Structure is subscription:_ Forme matches `Requires.<facet>` against `Maintains.<facet>` and wires the graph from the contracts themselves.
 
-The other kinds are `gateway` (an external source -- webhook/cron/manual ingress), `function` (a called helper with `### Parameters` → `### Returns`, never a node), `pattern` (reusable coordination expanded at compile), and `test` (assertions over a subject's world-model or receipts).
+Reactor compiles that set of contracts once (intelligently -- Forme topology, a per-node canonicalizer, postcondition validators, all frozen), then runs them forever (dumbly -- compare fingerprints, then skip, render, or propagate). The reconciler that decides _whether to wake_ is deliberately deterministic: **there is no judge step.** The memo key has no clock in it. A re-poll that returns the same truth costs nothing. See [the foundation](/openprose) for the full authored surface, and [the harness](/reactor) for how it runs.
+
+## React-flavored, not React-gated
+
+**You do not need React to use this.** The contracts are Markdown; the CLI, the receipts, and the keyless replay are entirely React-free. The whole product in two sentences: _you declare what should stay true, the system watches the world, and it does expensive model work only when something material actually moved._ The table below is an optional mental model for the people who already carry one -- skip it freely.
+
+<details>
+<summary>Optional: the React metaphor (skippable)</summary>
+
+If you know React, you already know the shape -- substitute three nouns:
+
+| React | Reactor |
+| --- | --- |
+| Component | **Responsibility** -- a declared standing goal |
+| DOM | **World-model** -- the maintained truth, on disk, passed by pointer |
+| `render()` | **A bounded LLM session** that computes the next world-model |
+| props | **Subscriptions** to other responsibilities' outputs |
+| `React.memo` (skip if props unchanged) | **Skip the render if subscribed inputs haven't moved** |
+| Manual dependency wiring | **Forme** -- the graph wires itself from declared contracts |
+
+The intelligence is frozen ahead of time, at compile, into a per-node canonicalizer and the Forme wiring. The reconciler at run time is dumb on purpose. There is no `.prose` parser and no interpreter -- a compile step is itself an agent session; the session embodies the VM.
+
+</details>
 
 ## See the thesis -- keyless, no model call
 
-The fastest way to understand Reactor is to replay a real saved run and read the per-node `rendered`/`skipped` dispositions, the cost rollup split by surprise cause, and per-node chain-verify -- with no key and no spend:
+The fastest way to understand the system is to replay a real saved run and read the per-node `rendered`/`skipped` dispositions, the receipt counts by `surprise_cause`, the token cost rollup, and per-node chain-verify -- with no key and no spend. No install required:
 
-```sh
-npm i -g @openprose/reactor @openprose/reactor-cli @openprose/reactor-devtools
-reactor-devtools --example masked-relay --describe
+```bash
+npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --describe
 ```
 
 ```text
-dispositions: rendered 46 · skipped 31   (reuse 32%)
-cost rollup by surprise-cause: external 8 · input 69   total 77
+dispositions  rendered=46 · skipped=31 · failed=0
+surprise-cause  external=8 · input=69   (a.k.a. wake-cause)   ← receipt COUNTS, 77 total
+
+COST ROLLUP  (tokens)
+  total       fresh=27180 tokens · reused=12840 tokens · reuse=32%
+    external  receipts=  8 fresh=   1080 tokens reused=840 tokens
+    input     receipts= 69 fresh=  26100 tokens reused=12000 tokens
 CHAIN-VERIFY ok
 ```
 
-That is "cost scales with surprise" -- checkable, with no key and no spend. From there, scaffold and inspect a project of your own, all offline:
+That is "cost scales with surprise" -- checkable, with no key and no spend. From there, the [setup path](/openprose/setup) walks the full ordered route: the keyless proof first, then `init` -> `doctor` -> `compile` offline, then go live and `serve`. Or jump to the [CLI quickstart](/cli/quickstart).
 
-```sh
-reactor init my-project && cd my-project
-reactor doctor                          # what's present + the fix for anything missing
-reactor compile --check; echo "exit=$?" # offline; exits 1 if the contract set is STALE
-```
+## Where the truth lives
 
-To go live you set a model key and the two optional peers, then `reactor compile` to wire the DAG and `reactor serve` to drive the scaffold's static gateway to a real receipt. The [Quickstart](/cli/quickstart) walks the full path.
-
-## Works with any harness -- Reactor is the fast path
-
-Reactor is built on **OpenProse**: Markdown contracts that run on any Prose-Complete agent harness. The `.prose.md` contracts are harness-agnostic. Reactor itself is a real SDK + CLI + DevTools you install and run -- the deterministic host that compiles, runs, and inspects standing responsibilities, and the recommended fast path for them.
-
-The canonical execution behavior lives in the open-source `open-prose` skill in the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are orientation; if the docs and the skill disagree, trust the skill.
+The canonical execution behavior lives in the open-source `open-prose` skill in the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are orientation; if the docs and the skill disagree, trust the skill. New here? Start with [OpenProse the paradigm](/openprose); coming from a chat-first workflow, jump to [Reactor](/reactor), the dependency-across-runs layer your prompts kept asking for.
 
 ---
 

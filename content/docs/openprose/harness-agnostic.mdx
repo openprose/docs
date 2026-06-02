@@ -1,0 +1,136 @@
+---
+title: Harness-agnostic
+description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM -- there is no parser. Reactor is one host, the recommended fast path.
+---
+
+# Harness-agnostic
+
+A `.prose.md` contract does not name a host. It declares an ideal world-model
+and, optionally, a fulfillment plan, in terms of an abstract VM. Anything that
+can map that VM's primitives onto real capabilities can run the same contract.
+This is the deliberate seam at the center of OpenProse: **the language is one
+layer, the host is another**, and you author against the language.
+
+This is why "harness-agnostic" is a property of the contract, not a promise from
+any one runtime. The wisdom of the ancients applies: you write to an interface,
+and the interface outlives any single implementation.
+
+## The VM primitives a host must provide
+
+A host is **Prose-Complete** when it can map the abstract VM operations onto its
+own tools. There are five, and they are the entire contract between the language
+and any host:
+
+| Primitive | What the host must do |
+| --- | --- |
+| `spawn_session` | Run a render -- a responsibility or a called function -- in an isolated agent/session with a prompt, an optional model, and access to the declared input/output paths |
+| `ask_user` | Pause for missing required caller input, and resume with the answer |
+| `read_state` / `write_state` | Read and write run state through the selected backend (the OpenProse root's run artifacts and durable records) |
+| `copy_binding` | Publish a declared output through the active backend; never publish undeclared scratch |
+| `check_env` | Confirm an environment variable exists without exposing its value |
+
+A host that can do these five things can execute any OpenProse contract. The
+contract never reaches past this table. It does not know whether `spawn_session`
+becomes a subagent call in Claude Code, a `codex-sdk` activation, or a bounded
+session inside Reactor -- it only knows that a render runs in isolation with the
+paths it declared.
+
+<Callout type="info">
+The mapping is the host's job, not yours. Codex-style and Claude Code-style
+environments are the primary documented targets. A Prose-Complete host with a
+real subagent primitive runs multi-agent contracts; a host without one may
+execute trivial single-render runs inline and must report the limitation rather
+than pretend.
+</Callout>
+
+## The same Markdown runs on any host
+
+Because the contract speaks only in VM primitives, the **same file** runs
+unchanged across hosts. You do not maintain a Claude variant and a Codex variant
+and a Reactor variant. You maintain one `.prose.md`. The host changes; the
+declared outcome does not.
+
+Concretely, a shell line like:
+
+```bash
+prose run src/hello.prose.md
+```
+
+means "ask the selected agent harness to embody the OpenProse VM and execute
+this contract." Swapping the host -- `codex-sdk`, `claude-sdk`, a local `mock`,
+or Reactor -- changes who provides the five primitives, not what the contract
+asks for.
+
+## The session embodies the VM -- there is no parser
+
+This is the load-bearing idea, and it is easy to miss because it inverts the
+usual assumption. OpenProse is **never parsed or interpreted**. There is no
+`.prose` parser, no bytecode, no interpreter loop that walks the Markdown.
+
+Instead, a SKILL-loaded agent session **is** the VM. When a Prose-Complete host
+loads the `open-prose` skill and reads a contract, the session itself carries
+the execution semantics: it resolves the contract, spawns renders, maintains the
+world-model, and signs receipts. The intelligence is the runtime. Even a compile
+step is an agent session -- the topology, the canonicalizer, and the validators
+are all session output, not parser output.
+
+<Callout type="info">
+A `prose` CLI is not a replacement VM. It forwards a run to the selected harness
+and never parses `.prose` semantics itself. The CLI is plumbing; the
+SKILL-loaded session is the machine.
+</Callout>
+
+This is what makes the language portable without a shared runtime binary. There
+is nothing to port. Any host that can host a capable agent session, and can map
+the five primitives, already has everything the language needs.
+
+## The language/harness seam
+
+Keeping the two layers distinct keeps both honest. The boundary is sharp:
+
+- **The language has one source-derived compile.** `prose compile` lowers the
+  `*.prose.md` source set into compile-phase IR. That IR is a pure function of
+  the source set and nothing else -- no clock, no run history, no host state.
+- **Runtime mechanics are sibling state, owned by the host.** A host's
+  token-truth receipts, forecasts, freshness tracking, and reconciler decisions
+  are runtime state owned by `@openprose/reactor`. They are **not** IR fields and
+  **not** new `*.prose.md` syntax. A host may keep none of this, some of it, or
+  all of it; the language does not require any of it.
+
+So when you read about receipts, fingerprints, memoization, and the reconciler
+in the [Reactor section](/reactor), read them as **one host's runtime**, not as
+language features. The contract you author is the same whether or not a host
+chooses to memoize it.
+
+## Reactor is one host -- the recommended fast path
+
+OpenProse contracts run on any Prose-Complete host. **Reactor** (the
+`@openprose/reactor` SDK, plus `reactor-cli` and `reactor-devtools`) is the host
+built specifically to run them well: it memoizes the agent-session DAG,
+re-renders only what moved, and leaves a content-addressed receipt behind every
+decision, so cost scales with surprise rather than the clock.
+
+That makes Reactor the recommended fast path -- not the only path. You can run
+the same contracts on a Claude Code or Codex session today. You reach for
+Reactor when you want the deterministic reconciler, the durable world-model, and
+the inspectable receipt trail. The choice is a host choice; your contracts do
+not change.
+
+## Where to go next
+
+<Cards>
+  <Card
+    title="Run it with Reactor"
+    href="/reactor"
+    description="The deterministic harness built to run OpenProse -- the memoized DAG, fingerprints, and the receipt trail."
+  />
+  <Card
+    title="Setup"
+    href="/openprose/setup"
+    description="The ordered agent-first path: keyless proof first, then init, doctor, compile, serve, and where contracts live."
+  />
+</Cards>
+
+The canonical execution behavior lives in the open-source `open-prose` skill in
+the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are
+orientation; if the docs and the skill disagree, trust the skill.

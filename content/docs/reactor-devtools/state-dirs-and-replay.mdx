@@ -39,20 +39,20 @@ Every read goes through one module (`src/data`), the only place the package touc
 | Need | SDK surface |
 | --- | --- |
 | Open the durable trail | `createFileSystemStorageAdapter({ directory })` -- `@openprose/reactor` |
-| Re-derive the ledger (= replay) | `new FileSystemReceiptLedger({ storage })` -- `@openprose/reactor/sdk` |
-| Ordering + per-node chain index + moved-facet diff + cost rollup | `createReplaySession({ ledger })` -- `@openprose/reactor/sdk` |
+| Re-derive the ledger (= replay) | `new FileSystemReceiptLedger({ storage })` -- `@openprose/reactor/adapters` |
+| Ordering + per-node chain index + moved-facet diff + cost rollup | `createReplaySession({ ledger })` -- `@openprose/reactor` |
 | Topology graph | `<state-dir>/compile/topology.json` (a `TopologyWorldModel`) |
-| Chain / tamper badge | `verifyReceiptChain` -- `@openprose/reactor/sdk` |
-| Click-through world-model | `FileSystemWorldModelStore.readVersion(node, version)` where `version === receipt.fingerprints["@atomic"]` |
+| Chain / tamper badge | `verifyReceiptChain` -- `@openprose/reactor` |
+| Click-through world-model | `createFileSystemWorldModelStore({ directory }).readVersion(node, version)` where `version === receipt.fingerprints["@atomic"]` |
 
-The viewer re-implements none of this. The moved-facet diff and the diamond single-wake are computed by the SDK's own helpers, so what you see matches what the live reconciler did.
+The viewer re-implements none of this. The moved-facet diff and the diamond single-wake are computed by the SDK's own helpers, so what you see matches what the live reconciler did. Almost everything here lives on the curated `@openprose/reactor` front door (see the [SDK front door](/sdk/front-door)); the one exception is the `FileSystemReceiptLedger` class, which the data module imports from `@openprose/reactor/adapters` (the front door ships the `createFileSystemReceiptLedger` builder for the common case).
 
 ## The ReplaySession surface
 
-`createReplaySession` is the SDK half of the data contract -- a tiny, pure-data shaping helper that any tool (the viewer, a benchmark front-end, your own script) can use to read a trail without re-deriving the math. It is exported from `@openprose/reactor/sdk`, does no I/O, and pulls no new dependency.
+`createReplaySession` is the SDK half of the data contract -- a tiny, pure-data shaping helper that any tool (the viewer, a benchmark front-end, your own script) can use to read a trail without re-deriving the math. It is exported from the curated `@openprose/reactor` front door, does no I/O, and pulls no new dependency.
 
 ```ts
-import { createReplaySession } from "@openprose/reactor/sdk";
+import { createReplaySession } from "@openprose/reactor";
 
 // Prefer handing in an already-opened ledger (stays filesystem-agnostic):
 const session = createReplaySession({ ledger });
