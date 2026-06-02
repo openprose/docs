@@ -88,7 +88,16 @@
     "webm",
     "dedup",
     "prev",
-    "dep"
+    "dep",
+    "fixpoint",
+    "wakeups",
+    "desugars",
+    "footguns",
+    "greppable",
+    "headlessly",
+    "screenshotting",
+    "unparseable",
+    "bucketings"
   ],
   "ignoreRegExpList": ["https?://[^\\s)]+", "`[^`]*`"]
 }
