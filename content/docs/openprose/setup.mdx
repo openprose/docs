@@ -22,6 +22,8 @@ npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --des
 ```
 
 ```text
+reactor-devtools --describe
+  (synthetic sample ledger -- token counts are illustrative, not a bill)
 dispositions  rendered=46 · skipped=31 · failed=0
 surprise-cause  external=8 · input=69   (a.k.a. wake-cause)   ← receipt COUNTS, 77 total
 
@@ -32,7 +34,7 @@ COST ROLLUP  (tokens)
 CHAIN-VERIFY ok
 ```
 
-The `surprise-cause` line counts receipts by what woke them; the cost rollup below it is the actual token spend, where `fresh` is what each surprise cost and `reused` is what memoization saved. That is "cost scales with surprise" -- checkable, with no key and no spend.
+The first line the binary prints is the honest frame: `masked-relay` is a **synthetic sample ledger**, so the token magnitudes are illustrative, not a measured bill. The genuinely checkable part is the **structure** -- the `surprise-cause` line counts receipts by what woke them, and the cost rollup splits `fresh` (what each surprise cost) from `reused` (what memoization saved), all chained under `CHAIN-VERIFY ok`. That structural shape is "cost scales with surprise" -- checkable, with no key and no spend. When you run your own contract (step 4), the rollup becomes your real spend.
 
 Prefer the browser? Drop `--describe` and `reactor-devtools --example masked-relay` boots an animated DAG viewer at a localhost URL: nodes flash on render, dim-pulse on memo-skip, with a live cost meter.
 

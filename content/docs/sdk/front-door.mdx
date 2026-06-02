@@ -49,9 +49,10 @@ await r.ingest("source", { data: { "in.txt": textFile("hello") } });
 // deliver input, reconcile to a fixpoint, re-render only what the new input moved
 ```
 
-This snippet matches the test-verified facade docstring in
-`sdk/facade.ts:158-164`. The `{ reactor: r }` destructure is the idiom -- the
-result also carries `bootResults` and `pollConnectors`.
+This mirrors the facade's documented usage in `sdk/facade.ts` (the docstring
+there shows the same `{ reactor: r } = await reactor(...)` destructure, then
+`r.ingest(...)`). The `{ reactor: r }` destructure is the idiom -- the result
+also carries `bootResults` and `pollConnectors`.
 
 ### `ReactorFacadeResult`
 

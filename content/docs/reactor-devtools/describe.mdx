@@ -15,36 +15,39 @@ Because the primary consumer of the Reactor is often an agent, this is a first-c
 
 ## The output
 
+This is the canonical `masked-relay` sample (the documented default `--example`). Its first line is the honest frame: a **synthetic sample ledger**, so the token magnitudes are illustrative, not a measured bill -- the checkable part is the structural shape (dispositions, surprise counts, and chain-verify).
+
 ```text
 reactor-devtools --describe
-  state-dir   ./run
-  topology    yes · 14 nodes · 22 edges · acyclic=true
-  receipts    92 frames
-  dispositions rendered=63 · skipped=28 · failed=1
-  wake-cause  external=36 · input=54 · self=2
+  (synthetic sample ledger -- token counts are illustrative, not a bill)
+  state-dir   ./fixtures/masked-relay
+  topology    yes · 12 nodes · 23 edges · acyclic=true
+  receipts    77 frames
+  dispositions rendered=46 · skipped=31 · failed=0
+  surprise-cause  external=8 · input=69  (a.k.a. wake-cause)
 
-COST ROLLUP
-  total       fresh=33660 · reused=13160 · reuse=28%
-    input     receipts=54  fresh=30420   reused=11480
-    self      receipts=2   fresh=0       reused=0
-    external  receipts=36  fresh=3240    reused=1680
-  peak fresh  14580 at frame 73 (Concept Clusterer)
+COST ROLLUP  (tokens)
+  total       fresh=27180 tokens · reused=12840 tokens · reuse=32%
+    input     receipts=69  fresh=26100   tokens reused=12000 tokens
+    external  receipts=8   fresh=1080    tokens reused=840 tokens
+  peak fresh  1620 tokens at frame 58 (viewport-masker)
 
 PER-NODE
-  Runtime Watch              r=6  s=12 f=0  fresh=3240    chain✓
-  Claude Adapter             r=4  s=0  f=0  fresh=1440    chain✓
-  Codex Adapter              r=4  s=0  f=1  fresh=720     chain✓
-  Session Ledger             r=5  s=7  f=0  fresh=2700    chain✓
-  Concept Clusterer          r=2  s=2  f=0  fresh=19440   chain✓
+  signal-inbox               r=3  s=1  f=0  fresh=1080    tokens chain✓
+  viewport-masker            r=3  s=6  f=0  fresh=3240    tokens chain✓
+  insight-synthesizer        r=6  s=15 f=0  fresh=6840    tokens chain✓
+  diversity-auditor          r=6  s=3  f=0  fresh=1080    tokens chain✓
   ...
 
-CHAIN-VERIFY  ok -- every node chain is prev-linked & consistent
+CHAIN-VERIFY  ok -- meaning-layer chain-consistency
+  (each receipt's content_hash matches its canonical payload and links its
+   prev -- NOT a cryptographic signature. v1 has a null signer, so this is
+   tamper-EVIDENT against accidental / independent edits, NOT against a forge.)
 
-FRAMES  (frame  node  status  moved[...]  fresh  woke[...])
-  0   Agent FS                   rendered moved[@atomic,claude,codex,...] fresh 0     woke[Runtime Watch]
-  1   Runtime Watch              rendered moved[@atomic,claude,codex,...] fresh 540   woke[Claude Adapter,Codex Adapter,...]
-  8   Session Ledger             rendered moved[@atomic,session:claudeA,session:claudeB,session:codexA] fresh 540  woke[Session Summary [claudeA],...]
-  9   Session Ledger             skipped  moved[--]                       fresh 0    woke[--]
+FRAMES  (frame  node  status  moved[output facets that changed]  fresh tokens  woke[…])
+  0   signal-inbox               rendered moved[@atomic,inbox] fresh 0      tokens woke[signal-inbox]
+  6   viewport-masker            rendered moved[@atomic,view_e1,view_e2] fresh 540  tokens woke[expander-1,expander-2,...]
+  8   viewport-masker            skipped  moved[--]             fresh 0      tokens woke[--]
   ...
 ```
 
@@ -65,12 +68,12 @@ FRAMES  (frame  node  status  moved[...]  fresh  woke[...])
 The `FRAMES` block is where "cost scales with surprise" stops being a slogan. In the example above:
 
 ```text
-  8   Session Ledger   rendered moved[@atomic,session:claudeA,...] fresh 540  woke[Session Summary ...]
-  9   Session Ledger   skipped  moved[--]                          fresh 0    woke[--]
-  10  Session Ledger   skipped  moved[--]                          fresh 0    woke[--]
+  6   viewport-masker   rendered moved[@atomic,view_e1,view_e2] fresh 540  tokens woke[expander-1,expander-2,...]
+  8   viewport-masker   skipped  moved[--]                       fresh 0    tokens woke[--]
+  10  viewport-masker   skipped  moved[--]                       fresh 0    tokens woke[--]
 ```
 
-Frame 8 renders and wakes its subscribers; frames 9 and 10 are byte-identical re-wakes that **memo-skip at zero fresh cost** and wake nothing. The skip is not a missing log line -- it is a recorded receipt proving the reactor was asked to re-check and correctly decided nothing moved.
+Frame 6 renders and wakes its subscribers; frames 8 and 10 are byte-identical re-wakes that **memo-skip at zero fresh cost** and wake nothing. The skip is not a missing log line -- it is a recorded receipt proving the reactor was asked to re-check and correctly decided nothing moved.
 
 ## Use it in CI
 

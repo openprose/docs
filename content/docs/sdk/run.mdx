@@ -181,7 +181,7 @@ export interface RunProjectRender {
   readonly buildRender?: (store: WorldModelStore) => AsyncMountedRender; // the deepest render-body backstop
   readonly skill?: string;             // pre-read SKILL system prompt
   readonly skillPath?: string;         // path to the SKILL when `skill` is unset
-  readonly sandbox?: RenderSandboxRunner; // the folded render sandbox (a TYPE only; the SDK ships no runner)
+  readonly sandbox?: RenderSandboxRunner; // a caller-supplied runner reaches the live render's sandbox_exec; the SDK exports the TYPE but ships no concrete runner (the CLI builds one)
   readonly shellTimeoutMs?: number;    // per-command shell_exec timeout (default 300_000 ms)
   readonly renderBackend?: RenderBackend; // the model-injection seam (record/replay, proxy, alternate model)
   readonly render?: RenderOptions;     // the model + full @openai/agents escape hatch, as one nested config

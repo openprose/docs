@@ -106,6 +106,8 @@ npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --des
 ```
 
 ```text
+reactor-devtools --describe
+  (synthetic sample ledger -- token counts are illustrative, not a bill)
 dispositions  rendered=46 · skipped=31 · failed=0
 surprise-cause  external=8 · input=69   (a.k.a. wake-cause)   ← receipt COUNTS, 77 total
 
@@ -116,7 +118,7 @@ COST ROLLUP  (tokens)
 CHAIN-VERIFY ok
 ```
 
-That is "cost scales with surprise" -- checkable, with no key and no spend. From there, the [setup path](/openprose/setup) walks the full ordered route: the keyless proof first, then `init` -> `doctor` -> `compile` offline, then go live and `serve`. Or jump to the [CLI quickstart](/cli/quickstart).
+The binary prints that synthetic-sample banner first, and it is the honest frame: `masked-relay` is a **saved sample ledger**, so the token magnitudes are illustrative, not a measured bill. What is genuinely checkable here is the **structure** -- the per-node `rendered`/`skipped` dispositions, the `surprise_cause` receipt counts, and `CHAIN-VERIFY ok` (every receipt links its `prev`). That structural shape is "cost scales with surprise," and you can verify it with no key and no spend. (When you run your own contract, the cost rollup becomes your real spend; see the [honest-status notes](/sdk#whats-built-and-what-isnt) on why there are no benchmark numbers yet.) From there, the [setup path](/openprose/setup) walks the full ordered route: the keyless proof first, then `init` -> `doctor` -> `compile` offline, then go live and `serve`. Or jump to the [CLI quickstart](/cli/quickstart).
 
 ## Where the truth lives
 

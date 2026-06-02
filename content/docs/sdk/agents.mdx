@@ -275,6 +275,14 @@ them), threads the full Tier-A/B/C escape hatch, and owns the one
 `spawn_subagent` tool, whose sub-agents inherit the same per-run escape hatch as
 the parent render.
 
+The sub-agent primitive is itself a named export off this subpath:
+`createSpawnSubagentTool(deps: SpawnSubagentDeps): Tool<AgentRenderContext>`
+builds that `spawn_subagent` tool. Recursion is a first-class seam -- `deps.subTools`
+is read at spawn time, so the factory may push the tool onto its own `subTools`
+after building it, letting a sub-agent spawn its own helper, with the same
+`maxTurns`/`Usage` backstop bounding every level. You import it when you assemble a
+render backend by hand instead of taking `createDefaultRenderBackend`.
+
 One behavior changed, and it is a correctness fix worth naming. The default
 backend **no longer calls the process-global `setTracingDisabled(true)`**. That
 mutation stomped a consumer's `runConfig.tracingDisabled = false` and leaked
