@@ -8,18 +8,25 @@ description: The reactor-devtools bin, the read-only HTTP API, the frame shape t
 ## The `reactor-devtools` bin
 
 ```text
-reactor-devtools <state-dir> [--port <n>] [--host <h>] [--describe]
+reactor-devtools <state-dir> [--port <n>] [--host <h>] [--describe] [--json]
+reactor-devtools --example <name> [--describe] [--json]            # replay a bundled fixture
+reactor-devtools --example <name> --copy-to <dir> [--force]        # seed a sample ledger
 ```
 
 | Argument / option | Default | Effect |
 | --- | --- | --- |
-| `<state-dir>` | _(required)_ | A saved Reactor state directory (receipts + `compile/topology.json`). |
+| `<state-dir>` | _(required unless `--example`)_ | A saved Reactor state directory (receipts + `compile/topology.json`). |
+| `--example <name>` | -- | Replay a fixture **shipped in the package** by name -- no path needed. The keyless proof from the README (e.g. `--example masked-relay`). |
+| `--copy-to <dir>` | -- | Copy the bundled `--example` fixture into `<dir>` so you have a real state-dir on disk to inspect or replay. Refuses a non-empty / existing dir unless `--force`. |
+| `--force` | -- | Overwrite a non-empty / existing state-dir on `--copy-to`. |
 | `-p`, `--port <n>` | `4555` | Port to listen on. Must be an integer. |
 | `--host <h>` | `127.0.0.1` | Host to bind. |
 | `--describe` | -- | Print the headless run summary (per-node + per-frame dispositions, moved-facet diff, cost rollup, chain-verify) and exit. No server, no browser. |
+| `--json` | -- | With `--describe`, emit that summary as machine-readable JSON (the CI/agent surface). Only meaningful with `--describe`; refused otherwise. |
+| `-V`, `--version` | -- | Print the package version and exit. |
 | `-h`, `--help` | -- | Print usage. |
 
-Exit codes: `0` on `--help` or a successful `--describe`; `1` when `<state-dir>` is missing (usage is printed), when `--port` is not an integer, or on any startup error. The server runs until `SIGINT` / `SIGTERM`, then closes and exits `0`.
+Exit codes: `0` on `--help`, `--version`, a successful `--describe`, or a successful `--copy-to`; `1` when `<state-dir>` is missing (and no `--example`), when `--port` is not an integer, when `--json` is passed without `--describe`, when `--copy-to` hits a non-empty dir without `--force`, or on any startup error. The server runs until `SIGINT` / `SIGTERM`, then closes and exits `0`.
 
 If `compile/topology.json` is absent, the viewer falls back to a node-only set derived from the receipts' distinct `node` values (boxes, no edges).
 
@@ -29,8 +36,8 @@ The server serves the SPA plus a tiny read-only API:
 
 | Route | Returns |
 | --- | --- |
-| `GET /api/state` | The full `ReplaySnapshot` (topology + frames + cost rollup). `GET /api/snapshot` is a kept alias. |
-| `GET /api/node/:id?version=<v>` | The node's world-model at a version (the click-through inspector) via `readVersion`. `version` is a frame's `atomicVersion`. `400` if missing, `404` if no such node/version. |
+| `GET /api/state` | The full `ReplaySnapshot` (topology + frames + cost rollup). `GET /api/snapshot` is a kept alias. **This is the only endpoint the SPA fetches** -- the whole view is a pure function of this snapshot. |
+| `GET /api/node/:id?version=<v>` | A node's world-model at a version, via `readVersion` (`version` is a frame's `atomicVersion`). `400` if missing, `404` if no such node/version. This is a **server/library endpoint for tools and integrators** -- the shipped SPA does not call it (there is no node-click UI in v1); fetch it yourself, or use the `readNodeWorldModel` / `versionForFrame` library helpers. |
 | `GET /events` | An SSE seam reserved for future live-attach -- idle (held open) in replay. |
 
 ## The frame shape

@@ -5,13 +5,15 @@ description: Scaffold, compile, and run a reactor project end to end.
 
 # Quickstart
 
-This walks the full path: `reactor init` to scaffold a project, `reactor compile` to freeze it, then `reactor run` for a one-shot drain or `reactor serve` for a durable daemon.
+This walks the full path: `reactor init` to scaffold a project, `reactor compile` to freeze it, then `reactor serve` to drive the scaffold's static gateway to a real receipt.
 
 ## Install
 
 ```sh
-npm install -g @openprose/reactor-cli
+npm i -g @openprose/reactor @openprose/reactor-cli @openprose/reactor-devtools
 ```
+
+`@openprose/reactor` is the SDK engine the CLI drives. As of this release the SDK is a real dependency of `@openprose/reactor-cli`, so `npm i -g @openprose/reactor-cli` already pulls it in -- the line above just makes the SDK and the replay viewer (`@openprose/reactor-devtools`) explicit so the keyless replay in [Reactor DevTools](/reactor-devtools/quickstart) is there too. None of these pull a model provider or a key.
 
 ## Scaffold a project
 
@@ -74,16 +76,9 @@ Once compiled, the offline observability commands work with no key. `topology` p
 reactor topology               # the compiled DAG (inbox -> digest)
 ```
 
-## Run once
+## Drive the static gateway
 
-`run` ensures the IR is fresh (compiling if stale), boots the reactor, drains to quiescence, prints per-node dispositions plus cost, and exits.
-
-```sh
-reactor run
-reactor status                 # standing compile cost beside the run cost
-```
-
-## Or serve as a daemon
+The scaffold's `inbox` gateway uses a `static` connector: its seeded items are ingested by the **serve** continuity loop, not by a bare boot-and-drain. Use `reactor serve` here, not `reactor run` -- `serve` polls the gateway and stages the seeded arrivals, which moves the inbox fingerprint and wakes `digest`. (`reactor run` is the one-shot drain for graphs whose connectors emit on their own; on a static scaffold it would boot, find nothing newly arrived, and exit without rendering.)
 
 `serve` boots the durable host, runs the continuity loop, and binds the built-in HTTP surface. It stays up until you stop it with Ctrl-C.
 
@@ -91,9 +86,10 @@ reactor status                 # standing compile cost beside the run cost
 reactor serve --http 8080
 ```
 
-The scaffold's `static` connector ingests the seeded items on the first tick, so the gateway and digest both render. In another shell you can read the trail:
+On the first tick the `static` connector ingests the seeded items, so the gateway and digest both render. In another shell you can read the trail and the standing cost:
 
 ```sh
+reactor status                 # standing compile cost beside the run cost
 reactor receipts list          # the gateway + digest receipts
 reactor receipts cost          # cost rolled up by surprise_cause
 ```

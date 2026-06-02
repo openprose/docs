@@ -1,4 +1,4 @@
 {
   "title": "OpenProse",
-  "pages": ["index", "start", "think", "reactor", "cli", "reactor-devtools", "use", "agents", "reference"]
+  "pages": ["index", "reactor", "cli", "reactor-devtools"]
 }
