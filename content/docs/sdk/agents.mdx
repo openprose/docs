@@ -258,7 +258,7 @@ Any vendor with an OpenAI-compatible Chat Completions endpoint drops straight in
 | --- | --- | --- | --- |
 | OpenRouter (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.5-flash` |
 | OpenAI | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| Anthropic | `https://api.anthropic.com/v1/` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
+| Anthropic (plain text only -- see below) | `https://api.anthropic.com/v1/` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 | Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `GEMINI_API_KEY` | `gemini-2.5-flash` |
 
 <Callout type="info">
@@ -275,19 +275,68 @@ Anthropic) in
 `packages/reactor/src/adapters/agent-render/__tests__/provider-byo.live.test.ts`.
 
 <Callout type="warn">
-**Anthropic's direct endpoint and structured outputs.** Compile sessions and the
-render's done/failed signal use a JSON-schema `response_format`. Anthropic's
-OpenAI-compatible endpoint requires `strict: true` on that schema and rejects the
-default with `400 response_format.json_schema.strict`. OpenAI and Google (and
-every model **via OpenRouter**, including Anthropic's) accept it as-is. So for
-**Claude models today, route through OpenRouter** (`provider` pointed at
-`https://openrouter.ai/api/v1`, model `anthropic/claude-...`); direct
-`api.anthropic.com` works for plain-text use but not yet for the structured
-compile/render path.
+**Don't use Anthropic's OpenAI-compatible endpoint for Claude -- use the native
+adapter below.** Compile sessions and the render's done/failed signal use a
+JSON-schema `response_format`, and renders drive tools. Anthropic documents its
+[OpenAI SDK compatibility layer](https://platform.claude.com/docs/en/api/openai-sdk)
+as "primarily for testing" -- it **ignores `response_format`** and rejects our
+structured schema with `400 response_format.json_schema.strict`. So
+`baseURL: "https://api.anthropic.com/v1/"` (the row above) is fine for plain-text
+probes but **not** the structured compile/render path. For Claude with structured
+outputs you have two supported routes: the **native Messages API** via the AI-SDK
+adapter (next), or **OpenRouter** (`provider` pointed at
+`https://openrouter.ai/api/v1`, model `anthropic/claude-...`), where Anthropic's
+own models accept the schema as-is.
 </Callout>
 
-For an API that is **not** OpenAI-compatible at all (a native Anthropic Messages
-client, a local model, a bespoke gateway), drop one level to the
+### Claude via the native Anthropic Messages API
+
+The supported way to drive Claude directly is the official `@openai/agents` route
+for non-OpenAI models: the [AI-SDK adapter](https://openai.github.io/openai-agents-js/extensions/ai-sdk/)
+over [`@ai-sdk/anthropic`](https://platform.claude.com/docs/en/build-with-claude/structured-outputs),
+which hits Anthropic's native Messages API where structured outputs and tools
+work. This is **still plain `@openai/agents` configuration** -- `provider` accepts
+any `ModelProvider`, so the harness is untouched; only the model session changes.
+No SDK changes are needed.
+
+```sh
+npm add @openai/agents-extensions ai @ai-sdk/anthropic
+```
+
+```ts
+import { reactor } from "@openprose/reactor";
+import type { ModelProvider } from "@openai/agents";
+import { aisdk } from "@openai/agents-extensions/ai-sdk";
+import { createAnthropic } from "@ai-sdk/anthropic";
+
+// A scoped ModelProvider backed by Anthropic's NATIVE Messages API.
+function anthropicNativeProvider(apiKey: string): ModelProvider {
+  const anthropic = createAnthropic({ apiKey });
+  const cache = new Map<string, ReturnType<typeof aisdk>>();
+  return {
+    getModel(modelName = "claude-haiku-4-5") {
+      let model = cache.get(modelName);
+      if (!model) cache.set(modelName, (model = aisdk(anthropic(modelName))));
+      return model;
+    },
+  };
+}
+
+const provider = anthropicNativeProvider(process.env.ANTHROPIC_API_KEY!);
+const { reactor: r } = await reactor("./my-project", {
+  directory: "./state",
+  render:  { provider, model: "claude-haiku-4-5" },              // run-phase renders
+  compile: { options: { provider, model: "claude-haiku-4-5" } }, // compile sessions
+});
+await r.ingest("source", { wake: { source: "external", refs: [] } });
+```
+
+The [Reactor CLI](/cli/configuration#choosing-a-model-provider) builds exactly
+this provider for you when you set `provider: anthropic` in `reactor.yml` -- you
+don't write the adapter wiring yourself there.
+
+For an API that is **not** OpenAI-compatible at all (a local model, a bespoke
+gateway) and has no AI-SDK provider, drop one level to the
 [`RenderBackend` injection seam](#the-renderbackend-injection-seam) below: you
 own the whole session and the harness keeps its instruction composition, tools,
 harvest, and cost capture.
