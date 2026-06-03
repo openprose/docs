@@ -79,8 +79,17 @@ Each built-in provider resolves to an endpoint + a key env var:
 | --- | --- | --- | --- |
 | `openrouter` (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.5-flash` |
 | `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4o-mini` |
-| `anthropic` | `https://api.anthropic.com/v1/` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
+| `anthropic` | Anthropic **Messages API** (native, see below) | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
 | `google` | `https://generativelanguage.googleapis.com/v1beta/openai/` | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+
+`openrouter`, `openai`, and `google` are OpenAI-compatible Chat Completions
+surfaces. `anthropic` is special: the CLI routes it through Anthropic's **native
+Messages API** (via the bundled `@openai/agents` AI-SDK adapter over
+`@ai-sdk/anthropic`), because Anthropic's OpenAI-compat endpoint ignores
+`response_format` and can't drive Reactor's structured compile/render. You don't
+install or wire anything -- `provider: anthropic` just works, structured outputs and
+all. An optional `base_url` points the adapter at a proxy in front of the Messages
+API.
 
 For any other OpenAI-compatible vendor (or a self-hosted gateway), name it freely
 and supply both `base_url` and `api_key_env`:
@@ -106,15 +115,17 @@ up from the project directory. A missing key fails `compile`/`run`/`serve` with 
 silently misdirects you to OpenRouter, and never exits 0 on an auth dead-end.
 </Callout>
 
-<Callout type="warn">
-**Claude models: prefer `openrouter` over `anthropic` for now.** Compile + render
-use a JSON-schema response format, and Anthropic's direct OpenAI-compatible
-endpoint rejects it unless `strict: true` (`400 response_format.json_schema.strict`).
-OpenRouter, OpenAI, and Google accept it. To run Claude today, use
-`provider: openrouter` with a `render_model`/`compile_model` like
-`anthropic/claude-haiku-4-5`. `provider: anthropic` (direct) is wired and
-authenticates, but the structured compile/run path is blocked by that endpoint
-requirement.
+<Callout type="info">
+**Claude, two ways.** `provider: anthropic` drives Claude directly through the
+native Messages API and fully supports the structured compile/render path -- it is
+the recommended route for Anthropic models. If you already aggregate models through
+one gateway, `provider: openrouter` with a `render_model`/`compile_model` like
+`anthropic/claude-haiku-4-5` also works. Avoid pointing a `base_url` at Anthropic's
+OpenAI-compatible endpoint (`https://api.anthropic.com/v1/`): it ignores
+`response_format` and rejects Reactor's JSON-schema with
+`400 response_format.json_schema.strict`. See the
+[SDK provider guide](/sdk/agents#claude-via-the-native-anthropic-messages-api)
+for the underlying `@openai/agents` wiring.
 </Callout>
 
 ## sandbox
