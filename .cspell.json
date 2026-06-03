@@ -100,7 +100,10 @@
     "bucketings",
     "bucketers",
     "consoledonottrack",
-    "hosters"
+    "hosters",
+    "Gemini",
+    "OpenAI",
+    "OpenRouter"
   ],
   "ignoreRegExpList": ["https?://[^\\s)]+", "`[^`]*`"]
 }
