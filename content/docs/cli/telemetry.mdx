@@ -1,6 +1,6 @@
 ---
 title: Telemetry
-description: Anonymous, opt-out, content-free CLI telemetry — exactly what is collected, and every way to turn it off.
+description: Anonymous, opt-out, content-free CLI telemetry -- exactly what is collected, and every way to turn it off.
 ---
 
 # Telemetry
@@ -10,10 +10,10 @@ The Reactor CLI collects anonymous, content-free usage telemetry so we can see h
 The posture, in one breath:
 
 - **Anonymous.** The only identifier is a random per-machine UUID. No account, no user, no email, no IP-derived geo.
-- **CLI-only.** Telemetry lives entirely in `@openprose/reactor-cli`. The SDK, `@openprose/reactor`, emits zero network traffic — a library that phones home from inside your stack is a trust violation, so it never does.
-- **Content-free.** We collect the *shape* of usage, never the *content* — never your prose, file paths, names, prompts, keys, or model input/output.
+- **CLI-only.** Telemetry lives entirely in `@openprose/reactor-cli`. The SDK, `@openprose/reactor`, emits zero network traffic -- a library that phones home from inside your stack is a trust violation, so it never does.
+- **Content-free.** We collect the *shape* of usage, never the *content* -- never your prose, file paths, names, prompts, keys, or model input/output.
 - **Opt-out, honored permanently.** `DO_NOT_TRACK=1`, `REACTOR_TELEMETRY=0`, or `reactor telemetry disable` each turn it off for good.
-- **Fire-and-forget.** A short, bounded request that never blocks, slows, or errors a command — even when the endpoint is down.
+- **Fire-and-forget.** A short, bounded request that never blocks, slows, or errors a command -- even when the endpoint is down.
 
 ## What is collected
 
@@ -21,8 +21,8 @@ Each event carries a coarse, content-free shape of one command:
 
 - The CLI and SDK versions, Node version, OS family, and CPU arch.
 - A `ci` boolean, the command name, and a coarse outcome (`success`, `failure`, or `cache_hit`).
-- Bucketed durations and counts — never raw numbers. A compile or run also reports bucketed node/edge/cost counts, the disposition tally, and the provider **class** (`anthropic`, `openai`, `local`, ...), never a key.
-- On a failure, a coarse error **category** (`provider`, `config`, `io`, `chain_verify`, `unknown`) — never the message or stack.
+- Bucketed durations and counts -- never raw numbers. A compile or run also reports bucketed node/edge/cost counts, the disposition tally, and the provider **class** (`anthropic`, `openai`, `local`, ...), never a key.
+- On a failure, a coarse error **category** (`provider`, `config`, `io`, `chain_verify`, `unknown`) -- never the message or stack.
 
 Counts collapse to `0` / `1-5` / `6-20` / `21+`; durations to `<1s` / `1-5s` / `5-30s` / `30s+`. The bucketers exist so a raw value can never slip through.
 
@@ -38,7 +38,7 @@ The trust invariant is that we send the shape of usage, never the content of it.
 
 ## Turning it off
 
-Telemetry is disabled if **any** one of these holds — each is permanent on its own:
+Telemetry is disabled if **any** one of these holds -- each is permanent on its own:
 
 | Condition | How |
 | --- | --- |
