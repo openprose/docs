@@ -1,0 +1,107 @@
+---
+title: Telemetry
+description: Anonymous, opt-out, content-free CLI telemetry -- exactly what is collected, and every way to turn it off.
+---
+
+# Telemetry
+
+The Reactor CLI collects anonymous, content-free usage telemetry so we can see how many people use Reactor and for what. It is on by default for interactive runs, off in CI, and one line to turn off for good. This page is the plain-language version; the exact field-by-field schema lives in [`TELEMETRY.md`](https://github.com/openprose/prose/blob/main/packages/reactor-cli/TELEMETRY.md) in the package.
+
+The posture, in one breath:
+
+- **Anonymous.** The only identifier is a random per-machine UUID. No account, no user, no email, no IP-derived geo.
+- **CLI-only.** Telemetry lives entirely in `@openprose/reactor-cli`. The SDK, `@openprose/reactor`, emits zero network traffic -- a library that phones home from inside your stack is a trust violation, so it never does.
+- **Content-free.** We collect the *shape* of usage, never the *content* -- never your prose, file paths, names, prompts, keys, or model input/output.
+- **Opt-out, honored permanently.** `DO_NOT_TRACK=1`, `REACTOR_TELEMETRY=0`, or `reactor telemetry disable` each turn it off for good.
+- **Fire-and-forget.** A short, bounded request that never blocks, slows, or errors a command -- even when the endpoint is down.
+
+## What is collected
+
+Each event carries a coarse, content-free shape of one command:
+
+- The CLI and SDK versions, Node version, OS family, and CPU arch.
+- A `ci` boolean, the command name, and a coarse outcome (`success`, `failure`, or `cache_hit`).
+- Bucketed durations and counts -- never raw numbers. A compile or run also reports bucketed node/edge/cost counts, the disposition tally, and the provider **class** (`anthropic`, `openai`, `local`, ...), never a key.
+- On a failure, a coarse error **category** (`provider`, `config`, `io`, `chain_verify`, `unknown`) -- never the message or stack.
+
+Counts collapse to `0` / `1-5` / `6-20` / `21+`; durations to `<1s` / `1-5s` / `5-30s` / `30s+`. The bucketers exist so a raw value can never slip through.
+
+## What is never collected
+
+The trust invariant is that we send the shape of usage, never the content of it. Forbidden in every field, no exceptions:
+
+- World-model content, the markdown, prompt text, or any model input/output
+- File paths, project or directory names, exact facet or node names
+- API keys, tokens, base URLs, or model ids
+- Error messages or stacks
+- Raw counts or durations, and precise or IP-derived geo
+
+## Turning it off
+
+Telemetry is disabled if **any** one of these holds -- each is permanent on its own:
+
+| Condition | How |
+| --- | --- |
+| `DO_NOT_TRACK` is truthy | `export DO_NOT_TRACK=1` (the [consoledonottrack.com](https://consoledonottrack.com) convention). |
+| Reactor env opt-out | `export REACTOR_TELEMETRY=0`, or set `REACTOR_TELEMETRY_DISABLED`. |
+| Offline | `REACTOR_OFFLINE=1`. |
+| CI | `CI` is truthy, or a known CI marker is set. |
+| Non-interactive | stdout is not a TTY (piped / redirected / automated runs are never tracked). |
+| Project config | `reactor.yml` → `telemetry.enabled: false`. |
+| Machine config | `reactor telemetry disable` (writes `~/.reactor/config.json`). |
+
+So a CI pipeline or a piped invocation is off without you doing anything. The simplest permanent opt-out on a workstation is:
+
+```sh
+reactor telemetry disable
+```
+
+### First-run notice
+
+The first time you run `reactor doctor` on a machine, a short notice prints to stdout: what is collected, that it is anonymous, the one-liner to turn it off, and a pointer to the schema. It shows once per machine. There is no banner at CLI entry and nothing on stderr.
+
+## Inspecting and managing it
+
+```sh
+reactor telemetry          # status: enabled?, reason if off, endpoint, install id
+reactor telemetry disable  # permanent machine-level opt-out
+reactor telemetry enable   # clear the machine-level opt-out
+reactor telemetry --dump   # print the exact JSON that would be sent, then exit
+```
+
+`reactor telemetry --dump` is the transparency surface: it prints the precise endpoint and Segment batch a representative event would send, and it never opens a socket. All three of `status`, `enable`, and `disable` accept `--json`.
+
+```sh
+$ reactor telemetry --dump
+{
+  "endpoint": "https://api.openprose.ai/analytics",
+  "batch": [
+    {
+      "type": "track",
+      "anonymousId": "3f8c1e0a-...",
+      "event": "reactor.doctor",
+      "properties": {
+        "schemaVersion": 1,
+        "cliVersion": "0.2.0",
+        "command": "doctor",
+        "outcome": "success",
+        "durationBucket": "<1s"
+      },
+      "context": { "library": "@openprose/reactor-cli" },
+      "timestamp": "2026-06-02T18:00:00.000Z"
+    }
+  ]
+}
+```
+
+## Endpoints
+
+The published CLI sends to `https://api.openprose.ai/analytics`. Local and dev builds send to `https://api.dev.openprose.ai/analytics`. Self-hosters can redirect telemetry with the `REACTOR_TELEMETRY_ENDPOINT` environment variable, or per project:
+
+```yaml
+# reactor.yml
+telemetry:
+  endpoint: https://analytics.example.com/analytics
+```
+
+The collection code is open source under `src/telemetry/` in `@openprose/reactor-cli`, and the full field-by-field schema is published in [`TELEMETRY.md`](https://github.com/openprose/prose/blob/main/packages/reactor-cli/TELEMETRY.md).
