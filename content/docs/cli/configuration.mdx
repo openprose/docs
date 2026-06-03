@@ -14,11 +14,13 @@ state:
   dir: ./.reactor              # durable state (receipts, world-models, IR cache)
 
 model:
-  provider: openrouter
+  provider: openrouter         # openrouter (default) | openai | anthropic | google | <custom>
   render_model: google/gemini-3.5-flash
   compile_model: google/gemini-3.5-flash
   temperature: 0
   max_turns: 200
+  # base_url: ...               # optional: override the provider's endpoint
+  # api_key_env: ...            # optional: read the key from a different env var
 
 sandbox:
   mode: none                   # none (default) | docker
@@ -45,13 +47,75 @@ reactors: []                   # optional: a multi-reactor host (see below)
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `model.provider` | `openrouter` | The model provider. |
+| `model.provider` | `openrouter` | The model provider. A built-in (`openrouter`, `openai`, `anthropic`, `google`) supplies its own endpoint + key env; any other name requires `base_url` + `api_key_env`. |
 | `model.render_model` | `google/gemini-3.5-flash` | The model used for renders at run/serve time. |
 | `model.compile_model` | `google/gemini-3.5-flash` | The model used for the compile sessions. It is part of the IR cache key. |
 | `model.temperature` | `0` | Sampling temperature. |
 | `model.max_turns` | `200` | The per-session turn ceiling. |
+| `model.base_url` | (provider default) | Override the OpenAI-compatible base URL. Optional for a built-in; required (with `api_key_env`) for a custom vendor. |
+| `model.api_key_env` | (provider default) | The env var holding the API key (e.g. `ANTHROPIC_API_KEY`). Optional for a built-in; set it to read from a non-default variable. |
 
 The compile model is a component of the content-addressed cache key `(contract-set fingerprint, SDK version, model id)`. Changing it invalidates the cache and forces a recompile.
+
+### Choosing a model provider
+
+By default Reactor talks to models through OpenRouter, but it is **not** bound to
+it. The CLI drives one bounded `@openai/agents` session per render/compile step,
+and any vendor with an **OpenAI-compatible Chat Completions** endpoint plugs in by
+naming it in `model:`. Point at OpenAI, Anthropic, or Google **directly** -- no
+OpenRouter account required:
+
+```yaml
+# Anthropic, directly (set ANTHROPIC_API_KEY in your env or a .env)
+model:
+  provider: anthropic
+  render_model: claude-haiku-4-5
+  compile_model: claude-haiku-4-5
+```
+
+Each built-in provider resolves to an endpoint + a key env var:
+
+| `provider` | Endpoint | Key env var | Example model id |
+| --- | --- | --- | --- |
+| `openrouter` (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.5-flash` |
+| `openai` | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `anthropic` | `https://api.anthropic.com/v1/` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
+| `google` | `https://generativelanguage.googleapis.com/v1beta/openai/` | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+
+For any other OpenAI-compatible vendor (or a self-hosted gateway), name it freely
+and supply both `base_url` and `api_key_env`:
+
+```yaml
+model:
+  provider: together
+  base_url: https://api.together.xyz/v1
+  api_key_env: TOGETHER_API_KEY
+  render_model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+  compile_model: meta-llama/Llama-3.3-70B-Instruct-Turbo
+```
+
+`api_key_env` also overrides a built-in's key var -- handy when, say, your
+OpenRouter key lives under a different name. Run `reactor doctor` to confirm the
+configured provider's key is visible (it reports the exact env var, never printing
+the value), and `reactor doctor --live` to drive one real round-trip against it.
+
+<Callout type="info">
+The key is read from the named env var first, then a `.env` discovered by walking
+up from the project directory. A missing key fails `compile`/`run`/`serve` with a
+**non-zero** exit and a message naming the exact variable to set -- it never
+silently misdirects you to OpenRouter, and never exits 0 on an auth dead-end.
+</Callout>
+
+<Callout type="warn">
+**Claude models: prefer `openrouter` over `anthropic` for now.** Compile + render
+use a JSON-schema response format, and Anthropic's direct OpenAI-compatible
+endpoint rejects it unless `strict: true` (`400 response_format.json_schema.strict`).
+OpenRouter, OpenAI, and Google accept it. To run Claude today, use
+`provider: openrouter` with a `render_model`/`compile_model` like
+`anthropic/claude-haiku-4-5`. `provider: anthropic` (direct) is wired and
+authenticates, but the structured compile/run path is blocked by that endpoint
+requirement.
+</Callout>
 
 ## sandbox
 
@@ -96,7 +160,8 @@ Each entry is isolated: its own contracts directory, state directory, substrate,
 
 | Variable | Meaning |
 | --- | --- |
-| `OPENROUTER_API_KEY` | The live key for the model surface. Required by `compile`, `run`, `serve`, and `trigger`. Read from the process env first, then a `.env` file discovered from the working directory upward. |
+| `OPENROUTER_API_KEY` | The live key for the **default** provider. Required by `compile`, `run`, `serve`, and `trigger` when `model.provider` is `openrouter`. Read from the process env first, then a `.env` file discovered from the working directory upward. |
+| `<model.api_key_env>` | The live key for a **non-default** provider -- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or whatever `model.api_key_env` names. Resolved the same way (env first, then a discoverable `.env`). See [Choosing a model provider](#choosing-a-model-provider). |
 | `REACTOR_OFFLINE` | Set to `1` (or `true`) to force offline mode. Equivalent to the `--offline` flag. |
 
 ## Global flags

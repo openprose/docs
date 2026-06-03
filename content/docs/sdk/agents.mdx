@@ -218,6 +218,80 @@ const render: RenderOptions = {
 };
 ```
 
+## Bring your own LLM provider
+
+Reactor is **not** bound to OpenRouter. The default render points at OpenRouter's
+OpenAI-compatible surface only because it is a cheap, broad gateway -- but the
+`provider` field is plain `@openai/agents` configuration, so you point it
+anywhere the way **any** `@openai/agents` consumer would: build a scoped
+`OpenAIProvider` at the base URL of your choice and hand it in. Nothing about the
+harness is OpenRouter-specific.
+
+```ts
+import { reactor } from "@openprose/reactor";
+import { OpenAIProvider } from "@openai/agents";
+
+// Anthropic, directly -- not through OpenRouter. (OpenAI and Google work the same
+// way; only the base URL, key, and model id change -- see the table below.)
+const provider = new OpenAIProvider({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  baseURL: "https://api.anthropic.com/v1/",
+  useResponses: false,   // Chat Completions -- the surface these vendors share
+});
+
+const { reactor: r } = await reactor("./my-project", {
+  directory: "./state",
+  render:  { provider, model: "claude-haiku-4-5" },              // run-phase renders
+  compile: { options: { provider, model: "claude-haiku-4-5" } }, // compile sessions
+});
+await r.ingest("source", { wake: { source: "external", refs: [] } });
+```
+
+The same scoped `provider` flows to **both** phases: `render.provider` drives the
+run-phase renders, and `compile.options.provider` drives the compile sessions
+(they are the same bounded-session machinery). Pass it in only one place and the
+other still defaults to OpenRouter, so set both when you mean to switch wholesale.
+
+Any vendor with an OpenAI-compatible Chat Completions endpoint drops straight in:
+
+| Vendor | `baseURL` | Key | Example model id |
+| --- | --- | --- | --- |
+| OpenRouter (default) | `https://openrouter.ai/api/v1` | `OPENROUTER_API_KEY` | `google/gemini-3.5-flash` |
+| OpenAI | `https://api.openai.com/v1` | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Anthropic | `https://api.anthropic.com/v1/` | `ANTHROPIC_API_KEY` | `claude-haiku-4-5` |
+| Google Gemini | `https://generativelanguage.googleapis.com/v1beta/openai/` | `GEMINI_API_KEY` | `gemini-2.5-flash` |
+
+<Callout type="info">
+**`useResponses: false` is the safe default for a non-OpenAI host.** It selects
+Chat Completions, the surface every vendor above implements; the newer Responses
+API is OpenAI-only and 404s elsewhere. Against OpenAI's own host you may leave it
+unset to use Responses.
+</Callout>
+
+Because `provider` is a **scoped** `ModelProvider`, this never mutates the
+`@openai/agents` process-global default client -- two reactors in one process can
+target two different vendors. The wiring is exercised live (OpenRouter + OpenAI +
+Anthropic) in
+`packages/reactor/src/adapters/agent-render/__tests__/provider-byo.live.test.ts`.
+
+<Callout type="warn">
+**Anthropic's direct endpoint and structured outputs.** Compile sessions and the
+render's done/failed signal use a JSON-schema `response_format`. Anthropic's
+OpenAI-compatible endpoint requires `strict: true` on that schema and rejects the
+default with `400 response_format.json_schema.strict`. OpenAI and Google (and
+every model **via OpenRouter**, including Anthropic's) accept it as-is. So for
+**Claude models today, route through OpenRouter** (`provider` pointed at
+`https://openrouter.ai/api/v1`, model `anthropic/claude-...`); direct
+`api.anthropic.com` works for plain-text use but not yet for the structured
+compile/render path.
+</Callout>
+
+For an API that is **not** OpenAI-compatible at all (a native Anthropic Messages
+client, a local model, a bespoke gateway), drop one level to the
+[`RenderBackend` injection seam](#the-renderbackend-injection-seam) below: you
+own the whole session and the harness keeps its instruction composition, tools,
+harvest, and cost capture.
+
 ## The `RenderBackend` injection seam
 
 The Tier-C factories let you rebuild the `Agent`/`Runner` while staying inside the
