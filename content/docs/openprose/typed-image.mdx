@@ -1,0 +1,116 @@
+---
+title: Typed Image
+description: A pixel-only diagram is a visual source one rung above Markdown. An intelligent compile resolve reads the picture and emits the contracts -- and whether it compiles is the typecheck.
+---
+
+# Typed Image
+
+A contract is Markdown. But Markdown is not the only thing that can carry intent
+into the compiler. A **typed image** is an ordinary picture -- a `.png` or
+`.svg` of boxes and labelled edges, *pixels only*, no embedded payload -- that
+an intelligent compile step reads and turns into `*.prose.md` contracts.
+
+The picture is the human-facing surface; the contracts are what runs. The image
+sits one rung **above** Markdown in the chain:
+
+```text
+image -> (resolve) -> *.prose.md -> (compile) -> DAG -> (run) -> receipts
+         brief, ratified            deterministic, content-addressed
+```
+
+## The source need not be text
+
+A diagram is a *better* notation than prose for the half of a contract that is
+tedious to write, and a worse one for the half that is easy. A drawing of the
+graph conveys structure at a glance -- which node subscribes to which facet,
+where the fan-out and the diamonds are -- exactly the wiring that is
+error-prone to hand-author and that [Forme](/reactor/the-dag-and-compile) has to
+resolve. Prose, in turn, owns the intent nuance a picture can only gesture at:
+the exact postcondition, the freshness window.
+
+So a typed image lets the **picture own the structural skeleton** and the
+**text inside the boxes own the intent**. It is a schematic -- think circuit
+diagram or score -- where labels and glyphs are load-bearing, not decoration.
+
+## A brief, not a binary
+
+Intent still lives only in the contract (Tenet 1). The resolve does not make the
+image a second authored surface for meaning -- it **emits** `*.prose.md` that a
+human ratifies, and *that* Markdown carries 100% of the semantic weight, exactly
+as if it had been typed. The picture is a *brief*; the contract is the spec; the
+compiled DAG is the binary. All of the model's interpretive latitude is
+quarantined to authoring time -- the rarest event in the system -- and the
+deterministic runtime that follows is unchanged.
+
+This is why the typed image is not new syntax. New capability in OpenProse is
+new *semantics*, never a new overlay: an image resolves down to the same five
+kinds and the same `###` sections you already author by hand.
+
+## The picture is the typecheck
+
+The "type" is conceptual and deliberately loose. It is not a byte schema and
+there is no parser. An image is **well-typed iff it compiles**: the resolve
+yields a contract set that Forme can wire into an *acyclic* DAG, and the result
+*round-trips stably* -- re-rendering the topology and re-resolving it lands on
+the same graph. A picture that cannot be resolved into a compiling, acyclic,
+stable graph is ill-typed, and the resolve must say so rather than invent a
+graph into existence.
+
+Compiling the image **is** running the typechecker.
+
+## What the pixels must carry
+
+The resolve reads the image in three tiers:
+
+- **Required (structure).** Node identity (a labelled box), node kind via visual
+  style (gateway / responsibility / function / terminal), directed edges
+  (subscriptions), the facet each multi-out edge carries, and the overall
+  fan-out / diamond geometry. These must be visually unambiguous.
+- **Pin-or-interrupt (safety).** Freshness windows (`### Continuity`) and
+  load-bearing postconditions are safety-critical -- a wrong freshness window is
+  silent staleness or runaway spend. The resolve reads an *explicit* annotation
+  (a clock glyph, a checklist) or **interrupts** with a `failed` receipt naming
+  the gap. It never guesses these.
+- **Elaborated (intent).** Given the skeleton pinned, the resolve may author the
+  `### Goal` prose and the body around the facets -- and it comes back as
+  ordinary authoring output for you to ratify.
+
+Deployment facts stay out of the picture: which URL or queue a gateway actually
+reads is an adapter binding wired at serve time, not something the brief encodes.
+
+## Scope: a system, a node, or a function
+
+The same type holds at any size. A many-box image resolves to a
+[Forme](/reactor/the-dag-and-compile) graph of `responsibility`/`gateway`
+contracts; a single box resolves to one `responsibility`; one box drawn as a
+function resolves to a `function` -- a visual signature and intent. Fewer boxes,
+same predicate.
+
+<Callout type="info">
+The typed image is an **authoring-surface** capability of the OpenProse compile,
+specified in the [`open-prose` skill](https://github.com/openprose/prose/blob/main/skills/open-prose/visual-source.md)
+(`visual-source.md`). Resolution is an intelligent compile step, so it is
+generative, not deterministic -- which is why its output is reviewable Markdown
+you ratify before anything runs. The deterministic harness still runs ordinary
+contracts.
+</Callout>
+
+<Cards>
+  <Card
+    title="Contracts"
+    href="/openprose/contracts"
+    description="The *.prose.md the resolve emits -- the five kinds and the load-bearing sections."
+  />
+  <Card
+    title="The DAG and compile"
+    href="/reactor/the-dag-and-compile"
+    description="How Forme wires Requires to Maintains -- the topology a multi-node image projects."
+  />
+</Cards>
+
+## Source of truth
+
+The canonical resolve behavior lives in the open-source
+[`open-prose` skill](https://github.com/openprose/prose) (`visual-source.md`).
+These docs are orientation. If the docs and the skill ever disagree, trust the
+skill.

@@ -1,4 +1,4 @@
 {
   "title": "OpenProse",
-  "pages": ["index", "declare-outcomes", "contracts", "prosescript", "harness-agnostic", "setup"]
+  "pages": ["index", "declare-outcomes", "contracts", "prosescript", "typed-image", "harness-agnostic", "setup"]
 }
