@@ -4,7 +4,7 @@ import { isPreviewMode } from "./preview-mode";
 
 /**
  * Returns the absolute canonical URL for a docs path. The path argument
- * MUST start with '/'. We pin the host to docs.openprose.ai regardless of
+ * MUST start with '/'. We pin the host to docs.prose.md regardless of
  * the actual runtime hostname, so preview deploys at openprose-docs.fly.dev
  * still emit the production canonical (preventing split-indexing on cutover).
  */

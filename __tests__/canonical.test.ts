@@ -7,19 +7,19 @@ import {
 
 describe("canonicalUrl", () => {
   it("returns the absolute URL for the root path", () => {
-    expect(canonicalUrl("/")).toBe("https://docs.openprose.ai/");
+    expect(canonicalUrl("/")).toBe("https://docs.prose.md/");
   });
 
   it("returns the absolute URL for a nested path", () => {
     expect(canonicalUrl("/get-started/install")).toBe(
-      "https://docs.openprose.ai/get-started/install",
+      "https://docs.prose.md/get-started/install",
     );
   });
 
-  it("ignores the runtime hostname (always pins to docs.openprose.ai)", () => {
+  it("ignores the runtime hostname (always pins to docs.prose.md)", () => {
     // Regression: even when running on openprose-docs.fly.dev during preview,
-    // canonical must point to docs.openprose.ai per spec Section 6.
-    expect(canonicalUrl("/foo")).toContain("docs.openprose.ai");
+    // canonical must point to docs.prose.md per spec Section 6.
+    expect(canonicalUrl("/foo")).toContain("docs.prose.md");
     expect(canonicalUrl("/foo")).not.toContain("fly.dev");
   });
 });
@@ -40,7 +40,7 @@ describe("buildPageMetadata", () => {
   it("emits absolute canonical URL for a nested docs path", () => {
     const md = buildPageMetadata("/docs/get-started/install");
     expect(md.alternates?.canonical).toBe(
-      "https://docs.openprose.ai/docs/get-started/install",
+      "https://docs.prose.md/docs/get-started/install",
     );
   });
 
