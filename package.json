@@ -8,7 +8,7 @@
     "type": "git",
     "url": "https://github.com/openprose/docs.git"
   },
-  "homepage": "https://docs.openprose.ai",
+  "homepage": "https://docs.prose.md",
   "packageManager": "pnpm@10.11.0",
   "scripts": {
     "postinstall": "fumadocs-mdx",

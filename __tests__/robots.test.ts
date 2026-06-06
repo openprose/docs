@@ -28,6 +28,6 @@ describe("app/robots.ts", () => {
       allow: "/",
     });
     expect(config.rules).toContainEqual({ userAgent: "CCBot", allow: "/" });
-    expect(config.sitemap).toBe("https://docs.openprose.ai/sitemap.xml");
+    expect(config.sitemap).toBe("https://docs.prose.md/sitemap.xml");
   });
 });
