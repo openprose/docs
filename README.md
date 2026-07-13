@@ -2,7 +2,7 @@
 
 Documentation site for [OpenProse](https://github.com/openprose/prose), the programming language for AI sessions.
 
-Live at: https://docs.openprose.ai
+Live at: https://docs.prose.md
 
 ## What is this?
 
