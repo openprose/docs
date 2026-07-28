@@ -101,9 +101,17 @@ about the act of declaring the truth.
 
 ## A type system for agent workflows
 
-The mental model that makes the discipline pay for itself: a bare prompt is
-`any`, a contract is a typed function. Declaring outcomes is how you give an
-agent workflow a type; [The language](/openprose) develops the analogy in full.
+Here is the mental model that makes the discipline pay for itself.
+
+Think of a bare prompt as `any`. It runs, and nothing is checked: no declared
+inputs, no declared output, no way for a caller to reason about it or for a
+violation to fail loudly. A contract is a **typed function**. Its inputs and
+outputs are declared, its callers can reason about composition, and an unmet
+obligation fails where you can see it rather than rotting silently downstream.
+
+You would not write a two-thousand-line TypeScript system in `any`. Multi-step
+agent work is the same. Declaring outcomes is how you give an agent workflow a
+type: the contract states what must be true, so the system can check that it is.
 
 ## What you actually write
 
@@ -144,7 +152,7 @@ specific way -- a tool that must run, an order that must hold -- OpenProse has a
 optional imperative layer (ProseScript) for pinning exactly that, and nothing
 more. The rule is "declarative by default, explicit when needed," and the
 explicit part stays subordinate to the declared outcome. See
-[ProseScript](/openprose/prosescript).
+[ProseScript](/prosescript).
 </Callout>
 
 ## Where to go next
@@ -152,17 +160,17 @@ explicit part stays subordinate to the declared outcome. See
 <Cards>
   <Card
     title="Contracts"
-    href="/openprose/contracts"
+    href="/contracts"
     description="The authored surface in depth -- the five kinds and the load-bearing sections, with `### Maintains` as the world-model schema doing four jobs at once."
   />
   <Card
     title="Harness-agnostic"
-    href="/openprose/harness-agnostic"
+    href="/harness-agnostic"
     description="The seam between the language and the host: the five VM primitives, and why the session embodies the VM."
   />
   <Card
     title="ProseScript"
-    href="/openprose/prosescript"
+    href="/prosescript"
     description="The optional imperative layer for pinning a step when declaring the outcome is not enough."
   />
 </Cards>

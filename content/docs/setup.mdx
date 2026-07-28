@@ -38,7 +38,7 @@ everywhere: `fetched_at` and source request ids. Postcondition: every funding
 event cites a source.
 ```
 
-A single responsibility with a `### Goal` and a `### Maintains` is a complete program. Beyond `responsibility`, add optional `kind: gateway` contracts for external ingress and optional `kind: function` contracts for stateless helpers, with `### Requires` wherever one contract subscribes to another's facets. [Contracts](/openprose/contracts) teaches the full authored surface, and [Declare outcomes](/openprose/declare-outcomes) teaches the discipline of writing the truth instead of the steps.
+A single responsibility with a `### Goal` and a `### Maintains` is a complete program. Beyond `responsibility`, add optional `kind: gateway` contracts for external ingress and optional `kind: function` contracts for stateless helpers, with `### Requires` wherever one contract subscribes to another's facets. [Contracts](/contracts) teaches the full authored surface, and [Declare outcomes](/declare-outcomes) teaches the discipline of writing the truth instead of the steps.
 
 ## 3. Run it
 
@@ -48,7 +48,7 @@ Point your agent at the file and say:
 prose run competitor-funding.prose.md
 ```
 
-This is an instruction to the session, not a shell binary. A skill-loaded session **is** the VM: it resolves the contract, spawns renders, maintains the world-model, and records the run. See [Harness-agnostic](/openprose/harness-agnostic) for why there is no parser and what a host must provide.
+This is an instruction to the session, not a shell binary. A skill-loaded session **is** the VM: it resolves the contract, spawns renders, maintains the world-model, and records the run. See [Harness-agnostic](/harness-agnostic) for why there is no parser and what a host must provide.
 
 ## 4. Learn from the examples
 
