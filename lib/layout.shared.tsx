@@ -13,5 +13,8 @@ export function baseOptions(): BaseLayoutProps {
       ),
     },
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+    // The site is light-only by design; without this the sidebar still
+    // renders a theme toggle even though the theme provider is disabled.
+    themeSwitch: { enabled: false },
   };
 }

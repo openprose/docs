@@ -7,6 +7,20 @@ const config = {
   output: "standalone",
   reactStrictMode: true,
   async redirects() {
+    const PROSE_REPO = "https://github.com/openprose/prose";
+
+    // The docs site covers the language. The harness reference lives with
+    // the packages in the openprose/prose repo; send the old harness routes
+    // there. Temporary redirects on purpose: these routes may host docs
+    // again when the harness documentation is reworked. A `/:path*` source
+    // also matches the bare prefix, so one entry covers a whole section.
+    const harnessRoutes = {
+      reactor: `${PROSE_REPO}#reactor-the-recommended-harness`,
+      sdk: `${PROSE_REPO}/tree/main/packages/reactor`,
+      cli: `${PROSE_REPO}/tree/main/packages/reactor-cli`,
+      "reactor-devtools": `${PROSE_REPO}/tree/main/packages/reactor-devtools`,
+    };
+
     return [
       // The early docs lived under /start/*, then under /openprose/*. The
       // site now covers one topic, so the pages live at the root; keep every
@@ -16,6 +30,8 @@ const config = {
         destination: "/",
         permanent: false,
       },
+      // The bare entry is required: `/:path*` cannot produce `/` when the
+      // wildcard matches zero segments.
       {
         source: "/openprose",
         destination: "/",
@@ -26,52 +42,11 @@ const config = {
         destination: "/:path*",
         permanent: false,
       },
-      // The docs site covers the language. The harness reference lives with
-      // the packages in the openprose/prose repo; send the old harness routes
-      // there. Temporary redirects on purpose: these routes may host docs
-      // again when the harness documentation is reworked.
-      {
-        source: "/reactor",
-        destination:
-          "https://github.com/openprose/prose#reactor-the-recommended-harness",
+      ...Object.entries(harnessRoutes).map(([prefix, destination]) => ({
+        source: `/${prefix}/:path*`,
+        destination,
         permanent: false,
-      },
-      {
-        source: "/reactor/:path*",
-        destination:
-          "https://github.com/openprose/prose#reactor-the-recommended-harness",
-        permanent: false,
-      },
-      {
-        source: "/sdk/:path*",
-        destination:
-          "https://github.com/openprose/prose/tree/main/packages/reactor",
-        permanent: false,
-      },
-      {
-        source: "/sdk",
-        destination:
-          "https://github.com/openprose/prose/tree/main/packages/reactor",
-        permanent: false,
-      },
-      {
-        source: "/cli/:path*",
-        destination:
-          "https://github.com/openprose/prose/tree/main/packages/reactor-cli",
-        permanent: false,
-      },
-      {
-        source: "/reactor-devtools/:path*",
-        destination:
-          "https://github.com/openprose/prose/tree/main/packages/reactor-devtools",
-        permanent: false,
-      },
-      {
-        source: "/reactor-devtools",
-        destination:
-          "https://github.com/openprose/prose/tree/main/packages/reactor-devtools",
-        permanent: false,
-      },
+      })),
     ];
   },
 };

@@ -5,7 +5,8 @@
 /* ============================================
    OPENPROSE DOCS - DESIGN SYSTEM
    Mirrors platform/apps/run "warm manuscript" aesthetic.
-   Light-only: dark mode disabled in app/layout.tsx via RootProvider.
+   Light-only: the theme provider is disabled in app/layout.tsx and the
+   theme switch in lib/layout.shared.tsx.
    ============================================ */
 
 :root {

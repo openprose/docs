@@ -16,11 +16,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
     <html lang="en" suppressHydrationWarning>
       <body className="paper-texture flex flex-col min-h-screen">
         <RootProvider theme={{ enabled: false, defaultTheme: "light" }}>
-          <DocsLayout
-            tree={source.getPageTree()}
-            themeSwitch={{ enabled: false }}
-            {...baseOptions()}
-          >
+          <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
             {children}
           </DocsLayout>
         </RootProvider>
