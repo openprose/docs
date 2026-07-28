@@ -7,7 +7,7 @@ description: A declarative language for standing AI work. You declare the outcom
 
 **OpenProse is a declarative language for standing AI work.** You write Markdown contracts (`*.prose.md`) that declare an ideal world-model: the truths you want kept current. You say what must stay true, and the host session works out the model work it takes to keep it that way. When order, loops, or exact choreography genuinely matter, optional imperative **ProseScript** plans drop in. Declarative by default, imperative where you want the control.
 
-The language ships as a skill. Install it, and any Prose-Complete coding agent (Claude Code, Codex CLI, OpenCode, and friends) can author and run contracts:
+The language ships as a skill. Install it, and any Prose-Complete coding agent (any agent host that can spawn sessions, read and write files, and call tools: Claude Code, Codex CLI, OpenCode, and friends) can author and run contracts:
 
 ```bash
 npx skills add openprose/prose
@@ -19,7 +19,7 @@ From there, point your agent at a contract and say `prose run <file>`. The sessi
 
 <Cards>
   <Card
-    title="What OpenProse is"
+    title="The language"
     href="/openprose"
     description="The paradigm: declare an ideal world-model in Markdown contracts. The render atom, the kinds, and why a contract is a typed function where a bare prompt is `any`."
   />
@@ -71,7 +71,7 @@ account carries a `valid_until`. Postcondition: every flagged account
 cites a corroborating signal.
 ```
 
-`### Maintains` is the world-model **schema** doing four jobs at once: it is a **type**, a **canonicalization spec** (what is material vs. immaterial, how things normalize), an optional set of **facets** (named sub-truths a consumer can subscribe to one at a time), and a set of **postconditions** that gate what a render may commit. _Structure is subscription:_ Forme, the compile-phase wiring, matches `Requires.<facet>` against `Maintains.<facet>` and wires the graph from the contracts themselves.
+`### Maintains` is the load-bearing section: the schema of the truth this contract keeps current. [Contracts](/openprose/contracts) teaches it in depth, along with the five kinds and the rest of the authored surface.
 
 How a host *serves* that contract set (memoization, receipts, a reconciler) is the host's concern, not the language's. The contract is the public artifact; it runs unchanged on any compliant host. See [Harness-agnostic](/openprose/harness-agnostic) for the seam.
 

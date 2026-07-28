@@ -25,8 +25,8 @@ and any host:
 | --- | --- |
 | `spawn_session` | Run a render -- a responsibility or a called function -- in an isolated agent/session with a prompt, an optional model, and access to the declared input/output paths |
 | `ask_user` | Pause for missing required caller input, and resume with the answer |
-| `read_state` / `write_state` | Read and write run state through the selected backend (the OpenProse root's run artifacts and durable records) |
-| `copy_binding` | Publish a declared output through the active backend; never publish undeclared scratch |
+| `read_state` / `write_state` | Read and write run state through whatever durable store the host provides |
+| `copy_binding` | Publish a declared output through that same durable store; never publish undeclared scratch |
 | `check_env` | Confirm an environment variable exists without exposing its value |
 
 A host that can do these five things can execute any OpenProse contract. The
@@ -57,9 +57,8 @@ prose run src/hello.prose.md
 ```
 
 means "ask the selected agent harness to embody the OpenProse VM and execute
-this contract." Swapping the host -- `codex-sdk`, `claude-sdk`, or a local
-`mock` -- changes who provides the five primitives, not what the contract
-asks for.
+this contract." Swapping the host changes who provides the five primitives,
+not what the contract asks for.
 
 ## The session embodies the VM -- there is no parser
 
@@ -101,7 +100,10 @@ So when a host advertises receipts, fingerprints, memoization, or a
 reconciler, read those as **one host's runtime**, not as language features. A
 deterministic host can use them to re-render only what moved, so cost scales
 with surprise rather than the clock. The contract you author is the same
-whether or not a host chooses to memoize it.
+whether or not a host chooses to memoize it. One such host today is
+**Reactor**, the deterministic harness built alongside the language; its
+reference lives with the packages in the
+[openprose/prose repo](https://github.com/openprose/prose#reactor-the-recommended-harness).
 
 ## Where to go next
 

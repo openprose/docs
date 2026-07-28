@@ -101,17 +101,9 @@ about the act of declaring the truth.
 
 ## A type system for agent workflows
 
-Here is the mental model that makes the discipline pay for itself.
-
-Think of a bare prompt as `any`. It runs, and nothing is checked: no declared
-inputs, no declared output, no way for a caller to reason about it or for a
-violation to fail loudly. A contract is a **typed function**. Its inputs and
-outputs are declared, its callers can reason about composition, and an unmet
-obligation fails where you can see it rather than rotting silently downstream.
-
-You would not write a two-thousand-line TypeScript system in `any`. Multi-step
-agent work is the same. Declaring outcomes is how you give an agent workflow a
-type: the contract states what must be true, so the system can check that it is.
+The mental model that makes the discipline pay for itself: a bare prompt is
+`any`, a contract is a typed function. Declaring outcomes is how you give an
+agent workflow a type; [The language](/openprose) develops the analogy in full.
 
 ## What you actually write
 
