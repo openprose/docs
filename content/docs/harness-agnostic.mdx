@@ -1,6 +1,6 @@
 ---
 title: Harness-agnostic
-description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM -- there is no parser.
+description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM. There is no parser.
 ---
 
 # Harness-agnostic
@@ -23,7 +23,7 @@ and any host:
 
 | Primitive | What the host must do |
 | --- | --- |
-| `spawn_session` | Run a render -- a responsibility or a called function -- in an isolated agent/session with a prompt, an optional model, and access to the declared input/output paths |
+| `spawn_session` | Run a render (a responsibility or a called function) in an isolated agent/session with a prompt, an optional model, and access to the declared input/output paths |
 | `ask_user` | Pause for missing required caller input, and resume with the answer |
 | `read_state` / `write_state` | Read and write run state through whatever durable store the host provides |
 | `copy_binding` | Publish a declared output through that same durable store; never publish undeclared scratch |
@@ -32,7 +32,7 @@ and any host:
 A host that can do these five things can execute any OpenProse contract. The
 contract never reaches past this table. It does not know whether `spawn_session`
 becomes a subagent call in Claude Code, a `codex-sdk` activation, or a bounded
-session inside some other host -- it only knows that a render runs in isolation
+session inside some other host. It only knows that a render runs in isolation
 with the paths it declared.
 
 <Callout type="info">
@@ -60,7 +60,7 @@ means "ask the selected agent harness to embody the OpenProse VM and execute
 this contract." Swapping the host changes who provides the five primitives,
 not what the contract asks for.
 
-## The session embodies the VM -- there is no parser
+## The session embodies the VM: there is no parser
 
 This is the load-bearing idea, and it is easy to miss because it inverts the
 usual assumption. OpenProse is **never parsed or interpreted**. There is no
@@ -70,7 +70,7 @@ Instead, a SKILL-loaded agent session **is** the VM. When a Prose-Complete host
 loads the `open-prose` skill and reads a contract, the session itself carries
 the execution semantics: it resolves the contract, spawns renders, maintains the
 world-model, and signs receipts. The intelligence is the runtime. Even a compile
-step is an agent session -- the topology, the canonicalizer, and the validators
+step is an agent session. The topology, the canonicalizer, and the validators
 are all session output, not parser output.
 
 <Callout type="info">
@@ -89,7 +89,7 @@ Keeping the two layers distinct keeps both honest. The boundary is sharp:
 
 - **The language has one source-derived compile.** `prose compile` lowers the
   `*.prose.md` source set into compile-phase IR. That IR is a pure function of
-  the source set and nothing else -- no clock, no run history, no host state.
+  the source set and nothing else: no clock, no run history, no host state.
 - **Runtime mechanics are sibling state, owned by the host.** A host's
   receipts, forecasts, freshness tracking, and reconciler decisions are runtime
   state owned by that host. They are **not** IR fields and **not** new

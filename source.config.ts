@@ -23,6 +23,16 @@ export default defineConfig({
         light: 'solarized-dark',
         dark: 'solarized-dark',
       },
+      transformers: [
+        {
+          // Expose the fence language so styles can treat prose-shaped
+          // fences (markdown) differently from alignment-sensitive ones.
+          name: 'lang-attribute',
+          pre(node) {
+            node.properties['data-lang'] = this.options.lang;
+          },
+        },
+      ],
     },
   },
 });
