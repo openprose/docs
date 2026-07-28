@@ -11,11 +11,10 @@ contract that declares an ideal world-model -- the truths you want kept current
 true. The program is not a Python graph or a hosted workflow. The program is the
 Markdown, and it runs inside the agent session itself.
 
-This is the foundation. [Reactor](/reactor) is the deterministic harness built
-to run it. They are not two systems; they are one system, two layers. OpenProse
-is the language you author in. Reactor is the recommended host that serves it
-efficiently. The contract is harness-agnostic; the same Markdown runs on any
-compliant host.
+This is the foundation. The contract is harness-agnostic: the same Markdown
+runs on any compliant host, and the language deliberately leaves the runtime
+that serves it to the host. You author against the language; the host provides
+the machine.
 
 ## Declare outcomes, not steps
 
@@ -88,19 +87,19 @@ syntax or a YAML overlay. The authored surface stays small, stable, and
 complete on purpose.
 </Callout>
 
-## Hands off to Reactor
+## Hands off to the host
 
 OpenProse defines the contract and what it means. It deliberately does **not**
 define the runtime that serves it -- the two-phase compile/run split,
 memoization, the continuity clock, receipts, and composition are the harness's
-concern. [Reactor](/reactor) (`@openprose/reactor` + `reactor-cli` +
-`reactor-devtools`) is that harness: it compiles your contracts into a
-content-addressed DAG and runs them so that expensive model work happens only
-when something material actually moved. Cost scales with surprise, not the clock.
+concern. A deterministic host can compile a contract set once and then do
+expensive model work only when something material actually moved, so cost
+scales with surprise rather than the clock; the language never requires any of
+that, and the same contract runs on a plain agent session.
 
-You can author OpenProse against any Prose-Complete host. Reactor is the
-recommended fast path because it makes the maintained-truth model real,
-deterministic, and observable.
+You author OpenProse against any Prose-Complete host. See
+[Harness-agnostic](/openprose/harness-agnostic) for the seam between the
+language and the machine that runs it.
 
 <Cards>
   <Card
@@ -131,12 +130,7 @@ deterministic, and observable.
   <Card
     title="Setup"
     href="/openprose/setup"
-    description="The agent-first path: keyless proof first, then init, doctor, compile, serve."
-  />
-  <Card
-    title="Run it with Reactor"
-    href="/reactor"
-    description="The deterministic harness built to run OpenProse -- the recommended fast path."
+    description="Install the skill, author a first contract, and run it where your agent lives."
   />
 </Cards>
 

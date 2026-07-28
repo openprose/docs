@@ -24,8 +24,10 @@ A diagram is a *better* notation than prose for the half of a contract that is
 tedious to write, and a worse one for the half that is easy. A drawing of the
 graph conveys structure at a glance -- which node subscribes to which facet,
 where the fan-out and the diamonds are -- exactly the wiring that is
-error-prone to hand-author and that [Forme](/reactor/the-dag-and-compile) has to
-resolve. Prose, in turn, owns the intent nuance a picture can only gesture at:
+error-prone to hand-author and that
+[Forme](https://github.com/openprose/prose/blob/main/skills/open-prose/forme.md),
+the compile-phase wiring, has to resolve. Prose, in turn, owns the intent
+nuance a picture can only gesture at:
 the exact postcondition, the freshness window.
 
 So a typed image lets the **picture own the structural skeleton** and the
@@ -81,7 +83,7 @@ reads is an adapter binding wired at serve time, not something the brief encodes
 ## Scope: a system, a node, or a function
 
 The same type holds at any size. A many-box image resolves to a
-[Forme](/reactor/the-dag-and-compile) graph of `responsibility`/`gateway`
+Forme-wired graph of `responsibility`/`gateway`
 contracts; a single box resolves to one `responsibility`; one box drawn as a
 function resolves to a `function` -- a visual signature and intent. Fewer boxes,
 same predicate.
@@ -102,9 +104,9 @@ contracts.
     description="The *.prose.md the resolve emits -- the five kinds and the load-bearing sections."
   />
   <Card
-    title="The DAG and compile"
-    href="/reactor/the-dag-and-compile"
-    description="How Forme wires Requires to Maintains -- the topology a multi-node image projects."
+    title="Harness-agnostic"
+    href="/openprose/harness-agnostic"
+    description="The compile is itself an agent session -- the seam between the language and the host that runs it."
   />
 </Cards>
 

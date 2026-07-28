@@ -1,4 +1,0 @@
-{
-  "title": "SDK API Reference",
-  "pages": ["index", "front-door", "agents", "adapters", "run", "internals"]
-}

@@ -17,9 +17,9 @@ Every section below is designed for both readers from the start.
 
 This page is the authored surface only -- what you write. The runtime that
 *serves* these contracts (fingerprints, memoization, the continuity clock,
-receipts) is the Reactor harness's concern; see
-[the Reactor section](/reactor) for that. Here, intent lives only in the
-contract.
+receipts) is the harness's concern; see
+[Harness-agnostic](/openprose/harness-agnostic) for that seam. Here, intent
+lives only in the contract.
 
 ## Frontmatter and identity
 
@@ -42,7 +42,7 @@ keys the node's world-model and receipt-ledger state on disk.
 | --- | --- | --- |
 | `responsibility` | Served (continuously reconciled) | The headline kind: a mounted DAG node maintaining a standing truth over time. |
 | `function` | Called (one-shot) | A stateless, ephemeral helper. Bind `### Parameters`, run one render, return `### Returns`. No Forme phase, no world-model. |
-| `gateway` | Mounted as external-driven | Sugar for an external-driven responsibility. Compiles into a trigger registration for `reactor serve`; refuses a direct `run`. |
+| `gateway` | Mounted as external-driven | Sugar for an external-driven responsibility. Compiles into a trigger registration for the serving host; refuses a direct `run`. |
 | `test` | Via the test path | Fixtures plus natural-language assertions against a subject responsibility or function. |
 | `pattern` | Instantiated at compile time | A reusable coordination algorithm, expanded into nodes at compile time. Never directly run. |
 
@@ -173,9 +173,9 @@ Markdown.
     description="The optional imperative pinning layer inside ### Execution, for when declarative defaults are not enough."
   />
   <Card
-    title="World-model and fingerprints"
-    href="/reactor/world-model-and-fingerprints"
-    description="How the Reactor harness turns a ### Maintains schema into a canonicalizer, fingerprints of meaning, and facet-granular wakeups."
+    title="Harness-agnostic"
+    href="/openprose/harness-agnostic"
+    description="How a host serves a ### Maintains schema -- fingerprints, memoization, and receipts are one host's runtime, not language features."
   />
   <Card
     title="Declare outcomes"
@@ -185,7 +185,7 @@ Markdown.
   <Card
     title="Set up a project"
     href="/openprose/setup"
-    description="Where contracts live on disk, and the ordered path from a keyless proof to a running reactor."
+    description="Install the skill, author a first contract, and run it where your agent lives."
   />
 </Cards>
 

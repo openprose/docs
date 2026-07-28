@@ -1,6 +1,6 @@
 ---
 title: Harness-agnostic
-description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM -- there is no parser. Reactor is one host, the recommended fast path.
+description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM -- there is no parser.
 ---
 
 # Harness-agnostic
@@ -32,8 +32,8 @@ and any host:
 A host that can do these five things can execute any OpenProse contract. The
 contract never reaches past this table. It does not know whether `spawn_session`
 becomes a subagent call in Claude Code, a `codex-sdk` activation, or a bounded
-session inside Reactor -- it only knows that a render runs in isolation with the
-paths it declared.
+session inside some other host -- it only knows that a render runs in isolation
+with the paths it declared.
 
 <Callout type="info">
 The mapping is the host's job, not yours. Codex-style and Claude Code-style
@@ -46,9 +46,9 @@ than pretend.
 ## The same Markdown runs on any host
 
 Because the contract speaks only in VM primitives, the **same file** runs
-unchanged across hosts. You do not maintain a Claude variant and a Codex variant
-and a Reactor variant. You maintain one `.prose.md`. The host changes; the
-declared outcome does not.
+unchanged across hosts. You do not maintain a Claude variant and a Codex
+variant. You maintain one `.prose.md`. The host changes; the declared outcome
+does not.
 
 Concretely, a shell line like:
 
@@ -57,8 +57,8 @@ prose run src/hello.prose.md
 ```
 
 means "ask the selected agent harness to embody the OpenProse VM and execute
-this contract." Swapping the host -- `codex-sdk`, `claude-sdk`, a local `mock`,
-or Reactor -- changes who provides the five primitives, not what the contract
+this contract." Swapping the host -- `codex-sdk`, `claude-sdk`, or a local
+`mock` -- changes who provides the five primitives, not what the contract
 asks for.
 
 ## The session embodies the VM -- there is no parser
@@ -92,42 +92,29 @@ Keeping the two layers distinct keeps both honest. The boundary is sharp:
   `*.prose.md` source set into compile-phase IR. That IR is a pure function of
   the source set and nothing else -- no clock, no run history, no host state.
 - **Runtime mechanics are sibling state, owned by the host.** A host's
-  token-truth receipts, forecasts, freshness tracking, and reconciler decisions
-  are runtime state owned by `@openprose/reactor`. They are **not** IR fields and
-  **not** new `*.prose.md` syntax. A host may keep none of this, some of it, or
-  all of it; the language does not require any of it.
+  receipts, forecasts, freshness tracking, and reconciler decisions are runtime
+  state owned by that host. They are **not** IR fields and **not** new
+  `*.prose.md` syntax. A host may keep none of this, some of it, or all of it;
+  the language does not require any of it.
 
-So when you read about receipts, fingerprints, memoization, and the reconciler
-in the [Reactor section](/reactor), read them as **one host's runtime**, not as
-language features. The contract you author is the same whether or not a host
-chooses to memoize it.
-
-## Reactor is one host -- the recommended fast path
-
-OpenProse contracts run on any Prose-Complete host. **Reactor** (the
-`@openprose/reactor` SDK, plus `reactor-cli` and `reactor-devtools`) is the host
-built specifically to run them well: it memoizes the agent-session DAG,
-re-renders only what moved, and leaves a content-addressed receipt behind every
-decision, so cost scales with surprise rather than the clock.
-
-That makes Reactor the recommended fast path -- not the only path. You can run
-the same contracts on a Claude Code or Codex session today. You reach for
-Reactor when you want the deterministic reconciler, the durable world-model, and
-the inspectable receipt trail. The choice is a host choice; your contracts do
-not change.
+So when a host advertises receipts, fingerprints, memoization, or a
+reconciler, read those as **one host's runtime**, not as language features. A
+deterministic host can use them to re-render only what moved, so cost scales
+with surprise rather than the clock. The contract you author is the same
+whether or not a host chooses to memoize it.
 
 ## Where to go next
 
 <Cards>
   <Card
-    title="Run it with Reactor"
-    href="/reactor"
-    description="The deterministic harness built to run OpenProse -- the memoized DAG, fingerprints, and the receipt trail."
-  />
-  <Card
     title="Setup"
     href="/openprose/setup"
-    description="The ordered agent-first path: keyless proof first, then init, doctor, compile, serve, and where contracts live."
+    description="Install the skill, author a first contract, and run it where your agent lives."
+  />
+  <Card
+    title="Contracts"
+    href="/openprose/contracts"
+    description="The authored surface: the five kinds and the load-bearing sections."
   />
 </Cards>
 

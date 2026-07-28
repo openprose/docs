@@ -1,53 +1,53 @@
 ---
 title: OpenProse
-description: One system, two layers. OpenProse is the paradigm you author in -- declare the outcomes you want kept true, in Markdown. Reactor is the harness that keeps them true, so cost scales with surprise, not the clock.
+description: A declarative language for standing AI work. You declare the outcomes you want kept true, in Markdown contracts, and any Prose-Complete agent harness runs them.
 ---
 
 # OpenProse
 
-**OpenProse is a programming paradigm: you _declare the outcomes you want kept true_ -- an ideal world-model -- instead of issuing instructions.** You write that intent as familiar structured **Markdown contracts** (`*.prose.md`), with optional imperative **ProseScript** fulfillment plans for when order, loops, or exact choreography matter. The render function is not deterministic byte code -- it is declarative Markdown fulfilled by a bounded agent session. OpenProse shipped first as a Skill and runs on **any Prose-Complete agent harness**.
+**OpenProse is a declarative language for standing AI work.** You write Markdown contracts (`*.prose.md`) that declare an ideal world-model: the truths you want kept current. You say what must stay true, and the host session works out the model work it takes to keep it that way. When order, loops, or exact choreography genuinely matter, optional imperative **ProseScript** plans drop in. Declarative by default, imperative where you want the control.
 
-**Reactor (`@openprose/reactor`) is the harness built to run OpenProse** -- and the recommended **fast path**. It keeps a composed **world-model** up to date against a changing world, re-rendering only the declared facets whose upstream inputs actually moved (memoized agent sessions wired into a DAG), and leaves a content-addressed **receipt** behind every decision.
+The language ships as a skill. Install it, and any Prose-Complete coding agent (Claude Code, Codex CLI, OpenCode, and friends) can author and run contracts:
 
-These are not two systems. They are **one system, two layers that fit together**: OpenProse is the language you author in; Reactor is the deterministic host that serves it efficiently. The thesis Reactor works toward:
+```bash
+npx skills add openprose/prose
+```
 
-> **Inference cost that scales with surprise, not wall-clock time.**
-
-In plain terms: you declare what should stay true, the system watches the world, and it does expensive model work **only when something material actually moved**.
+From there, point your agent at a contract and say `prose run <file>`. The session itself embodies the VM: there is no parser and no separate binary.
 
 ## Start here
 
 <Cards>
   <Card
-    title="Start with OpenProse"
+    title="What OpenProse is"
     href="/openprose"
     description="The paradigm: declare an ideal world-model in Markdown contracts. The render atom, the kinds, and why a contract is a typed function where a bare prompt is `any`."
   />
   <Card
-    title="Run it with Reactor"
-    href="/reactor"
-    description="The deterministic harness built to run OpenProse contracts. Compile once into a content-addressed DAG, run forever so cost scales with surprise."
+    title="Declare outcomes"
+    href="/openprose/declare-outcomes"
+    description="The central teaching: author a truth to keep current, not a sequence of steps to run."
   />
   <Card
-    title="SDK API Reference"
-    href="/sdk"
-    description="The full @openprose/reactor 0.3.0 surface: the curated front door, the typed Reactor handle, and the six reasoned entrypoints."
+    title="Contracts"
+    href="/openprose/contracts"
+    description="The authored surface: the five kinds and the load-bearing sections. Structure is subscription."
   />
   <Card
-    title="Reactor CLI"
-    href="/cli/quickstart"
-    description="The shell driver for the SDK. init, doctor, compile, serve -- scaffold a project and run it as a durable, cost-observable daemon."
+    title="ProseScript"
+    href="/openprose/prosescript"
+    description="The optional imperative layer for when the order of operations matters."
   />
   <Card
-    title="DevTools (keyless replay)"
-    href="/reactor-devtools"
-    description="Replay a saved run and watch the render/skip/cost trail -- keyless, no model call, no spend."
+    title="Setup"
+    href="/openprose/setup"
+    description="Install the skill, author a first contract, and run it where your agent lives."
   />
 </Cards>
 
 ## The shape of a contract
 
-You author **Responsibilities** -- standing goals, written as Markdown contracts. A responsibility declares what it subscribes to (`### Requires`) and the truth it keeps current (`### Maintains`):
+You author **Responsibilities**: standing goals, written as Markdown contracts. A responsibility declares what it subscribes to (`### Requires`) and the truth it keeps current (`### Maintains`):
 
 ```markdown
 ---
@@ -71,58 +71,13 @@ account carries a `valid_until`. Postcondition: every flagged account
 cites a corroborating signal.
 ```
 
-`### Maintains` is the world-model **schema** doing four jobs at once: it is a **type**, a **canonicalization spec** (what is material vs. immaterial, how things normalize), an optional set of **facets** (named sub-truths a consumer can subscribe to one at a time), and a set of **postconditions** that compile to commit-gate validators. _Structure is subscription:_ Forme matches `Requires.<facet>` against `Maintains.<facet>` and wires the graph from the contracts themselves.
+`### Maintains` is the world-model **schema** doing four jobs at once: it is a **type**, a **canonicalization spec** (what is material vs. immaterial, how things normalize), an optional set of **facets** (named sub-truths a consumer can subscribe to one at a time), and a set of **postconditions** that gate what a render may commit. _Structure is subscription:_ Forme, the compile-phase wiring, matches `Requires.<facet>` against `Maintains.<facet>` and wires the graph from the contracts themselves.
 
-Reactor compiles that set of contracts once (intelligently -- Forme topology, a per-node canonicalizer, postcondition validators, all frozen), then runs them forever (dumbly -- compare fingerprints, then skip, render, or propagate). The reconciler that decides _whether to wake_ is deliberately deterministic: **there is no judge step.** The memo key has no clock in it. A re-poll that returns the same truth costs nothing. See [the foundation](/openprose) for the full authored surface, and [the harness](/reactor) for how it runs.
-
-## React-flavored, not React-gated
-
-**You do not need React to use this.** The contracts are Markdown; the CLI, the receipts, and the keyless replay are entirely React-free. The whole product in two sentences: _you declare what should stay true, the system watches the world, and it does expensive model work only when something material actually moved._ The table below is an optional mental model for the people who already carry one -- skip it freely.
-
-<details>
-<summary>Optional: the React metaphor (skippable)</summary>
-
-If you know React, you already know the shape -- substitute three nouns:
-
-| React | Reactor |
-| --- | --- |
-| Component | **Responsibility** -- a declared standing goal |
-| DOM | **World-model** -- the maintained truth, on disk, passed by pointer |
-| `render()` | **A bounded LLM session** that computes the next world-model |
-| props | **Subscriptions** to other responsibilities' outputs |
-| `React.memo` (skip if props unchanged) | **Skip the render if subscribed inputs haven't moved** |
-| Manual dependency wiring | **Forme** -- the graph wires itself from declared contracts |
-
-The intelligence is frozen ahead of time, at compile, into a per-node canonicalizer and the Forme wiring. The reconciler at run time is dumb on purpose. There is no `.prose` parser and no interpreter -- a compile step is itself an agent session; the session embodies the VM.
-
-</details>
-
-## See the thesis -- keyless, no model call
-
-The fastest way to understand the system is to replay a real saved run and read the per-node `rendered`/`skipped` dispositions, the receipt counts by `surprise_cause`, the token cost rollup, and per-node chain-verify -- with no key and no spend. No install required:
-
-```bash
-npx -p @openprose/reactor-devtools reactor-devtools --example masked-relay --describe
-```
-
-```text
-reactor-devtools --describe
-  (synthetic sample ledger -- token counts are illustrative, not a bill)
-dispositions  rendered=46 · skipped=31 · failed=0
-surprise-cause  external=8 · input=69   (a.k.a. wake-cause)   ← receipt COUNTS, 77 total
-
-COST ROLLUP  (tokens)
-  total       fresh=27180 tokens · reused=12840 tokens · reuse=32%
-    external  receipts=  8 fresh=   1080 tokens reused=840 tokens
-    input     receipts= 69 fresh=  26100 tokens reused=12000 tokens
-CHAIN-VERIFY ok
-```
-
-The binary prints that synthetic-sample banner first, and it is the honest frame: `masked-relay` is a **saved sample ledger**, so the token magnitudes are illustrative, not a measured bill. What is genuinely checkable here is the **structure** -- the per-node `rendered`/`skipped` dispositions, the `surprise_cause` receipt counts, and `CHAIN-VERIFY ok` (every receipt links its `prev`). That structural shape is "cost scales with surprise," and you can verify it with no key and no spend. (When you run your own contract, the cost rollup becomes your real spend; see the [honest-status notes](/sdk#whats-built-and-what-isnt) on why there are no benchmark numbers yet.) From there, the [setup path](/openprose/setup) walks the full ordered route: the keyless proof first, then `init` -> `doctor` -> `compile` offline, then go live and `serve`. Or jump to the [CLI quickstart](/cli/quickstart).
+How a host *serves* that contract set (memoization, receipts, a reconciler) is the host's concern, not the language's. The contract is the public artifact; it runs unchanged on any compliant host. See [Harness-agnostic](/openprose/harness-agnostic) for the seam.
 
 ## Where the truth lives
 
-The canonical execution behavior lives in the open-source `open-prose` skill in the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are orientation; if the docs and the skill disagree, trust the skill. New here? Start with [OpenProse the paradigm](/openprose); coming from a chat-first workflow, jump to [Reactor](/reactor), the dependency-across-runs layer your prompts kept asking for.
+The canonical execution behavior lives in the open-source `open-prose` skill in the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are orientation; if the docs and the skill disagree, trust the skill.
 
 ---
 
