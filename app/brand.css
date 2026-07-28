@@ -249,3 +249,21 @@ a:hover .op-wordmark span:first-child {
 .prose-program figcaption span {
   color: var(--code-text-muted);
 }
+
+/* On narrow viewports, soft-wrap prose-shaped fences (markdown fences and the
+   ProseProgram panels, which are markdown by construction) so their sentences
+   stay readable instead of scrolling off-screen. Alignment-sensitive fences
+   (text diagrams, bash) keep their horizontal scroll. */
+@media (max-width: 767px) {
+  #nd-page pre:has(> code.language-markdown),
+  .prose-program pre {
+    min-width: 0;
+    width: auto;
+  }
+
+  #nd-page code.language-markdown,
+  .prose-program pre code {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}

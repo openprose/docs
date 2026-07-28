@@ -1,6 +1,6 @@
 ---
 title: Declare outcomes, not instructions
-description: The central teaching of OpenProse -- author an ideal world-model to keep true, not a sequence of steps to run. Intent lives only in the contract.
+description: "The central teaching of OpenProse: author an ideal world-model to keep true, not a sequence of steps to run. Intent lives only in the contract."
 ---
 
 # Declare outcomes, not instructions
@@ -8,8 +8,8 @@ description: The central teaching of OpenProse -- author an ideal world-model to
 OpenProse asks one thing of you that most agent frameworks do not: **declare the
 truth you want kept current, and stop there.** Not the steps. Not the order. Not
 the prompt that coaxes a model through them. You write down the world as it
-should be -- an ideal world-model the system is responsible for making real and
-keeping real -- and the host figures out the work.
+should be (an ideal world-model the system is responsible for making real and
+keeping real), and the host figures out the work.
 
 This is the inversion at the heart of the paradigm, and everything else (the
 five contract kinds, fingerprints, the DAG, receipts) is downstream of it.
@@ -17,9 +17,9 @@ five contract kinds, fingerprints, the DAG, receipts) is downstream of it.
 ## Instructions decay; outcomes endure
 
 A prompt is a sequence of instructions aimed at one moment. It runs, it produces
-something, and then the moment passes. When the world moves -- a new filing
-lands, a competitor ships, a number drifts -- the instructions have nothing to
-say, because they were never about the world. They were about a turn.
+something, and then the moment passes. The world moves on: a new filing lands, a
+competitor ships, a number drifts. The instructions have nothing to say, because
+they were never about the world. They were about a turn.
 
 An **outcome** is different. "Every tracked competitor has a current,
 corroborated funding view" is true or it is not, today and tomorrow and after
@@ -40,23 +40,23 @@ That is the whole shift:
 This is the language layer. It says **what** is true and **what** counts as a
 material change. It deliberately says nothing about *how often* the host checks,
 *how* it decides something moved, or *what* it records along the way. Those are
-runtime mechanics, owned by a harness like
-[Reactor](/reactor) -- and deferred to that section on purpose.
+runtime mechanics, owned by the harness that serves the contract, and left to
+it on purpose.
 </Callout>
 
 ## Intent lives only in the contract
 
 The first OpenProse tenet states it plainly: **intent lives only in the
 contract.** The `*.prose.md` you author carries 100% of the semantic weight.
-Everything else -- the compiled artifacts, the projections, the operational
-policy a host applies -- is *derived*, and when a derived thing disagrees with
+Everything else (the compiled artifacts, the projections, the operational
+policy a host applies) is *derived*, and when a derived thing disagrees with
 your contract, the contract is right.
 
 There is no second authored surface for intent. Not a prompt you tune on the
 side. Not a YAML config that quietly overrides the Markdown. Not a hidden judge
 prompt deciding what you really meant. If you find yourself reaching for one of
 those, the meaning has leaked out of the contract, and the system can no longer
-guarantee the outcome you declared -- because you declared it in two places that
+guarantee the outcome you declared, because you declared it in two places that
 can drift apart.
 
 One source of meaning is not a stylistic preference. It is what lets the same
@@ -67,14 +67,14 @@ there is exactly one thing the trail can be checked against.
 ## The world-model: a maintained truth, like the DOM
 
 When you declare an outcome, the thing the system keeps real on your behalf is
-the **world-model** -- a node's maintained truth, persisted on disk, standing
+the **world-model**: a node's maintained truth, persisted on disk, standing
 between one unit of work and the next.
 
-If you know React, you already know the shape. The world-model is the Reactor's
-**DOM**: a current, structured representation that survives between renders, is
+If you know React, you already know the shape. The world-model plays the role
+of the **DOM**: a current, structured representation that survives between renders, is
 read by the next render as its prior state, and is subscribed to by whatever
 depends on it. You do not rebuild it from scratch each turn. You declare its
-*schema* -- its shape, and what about it actually matters -- and the system keeps
+*schema* (its shape, and what about it actually matters), and the system keeps
 that truth current against a changing world.
 
 A render, then, is one bounded step from prior truth to next truth:
@@ -92,12 +92,11 @@ right. The instructions you did *not* write are what the session figures out in
 the middle.
 
 <Callout type="info">
-You declare the world-model's schema -- its fields, what counts as a material
+You declare the world-model's schema: its fields, what counts as a material
 change, and how its parts divide for subscription. The host owns *how* it decides
 a change occurred (fingerprints), *when* it re-checks (the reconciler), and *what*
-it records (receipts). See
-[World-model and fingerprints](/reactor/world-model-and-fingerprints) for those
-mechanics; this page is only about the act of declaring the truth.
+it records (receipts). Those mechanics belong to the host; this page is only
+about the act of declaring the truth.
 </Callout>
 
 ## A type system for agent workflows
@@ -117,7 +116,7 @@ type: the contract states what must be true, so the system can check that it is.
 ## What you actually write
 
 Declaring an outcome is concrete. A standing goal becomes a
-`kind: responsibility` -- the headline kind, mounted as a node whose truth is
+`kind: responsibility`, the headline kind, mounted as a node whose truth is
 maintained over time. You name the truth it keeps current and what counts as a
 material change to it; the host does the rest.
 
@@ -141,19 +140,19 @@ event cites a source.
 ```
 
 There is no `### Execution` here, and that absence is the point. You did not
-write the steps. You declared the outcome -- the truth, its shape, what matters
-about it, and what must hold before it may be committed -- and a render figures
+write the steps. You declared the outcome: the truth, its shape, what matters
+about it, and what must hold before it may be committed. A render figures
 out the work each time the world moves. `### Maintains` is doing the load-bearing
 job: it is the world-model schema, and learning to author it well is the next
 page.
 
 <Callout type="warn">
-Declarative is the default, not a cage. When a step genuinely must happen in a
-specific way -- a tool that must run, an order that must hold -- OpenProse has an
-optional imperative layer (ProseScript) for pinning exactly that, and nothing
-more. The rule is "declarative by default, explicit when needed," and the
+Declarative is the default, not a cage. Some steps genuinely must happen in a
+specific way: a tool that must run, an order that must hold. For those,
+OpenProse has an optional imperative layer (ProseScript) for pinning exactly
+that, and nothing more. The rule is "declarative by default, explicit when needed," and the
 explicit part stays subordinate to the declared outcome. See
-[ProseScript](/openprose/prosescript).
+[ProseScript](/prosescript).
 </Callout>
 
 ## Where to go next
@@ -161,18 +160,23 @@ explicit part stays subordinate to the declared outcome. See
 <Cards>
   <Card
     title="Contracts"
-    href="/openprose/contracts"
-    description="The authored surface in depth -- the five kinds and the load-bearing sections, with `### Maintains` as the world-model schema doing four jobs at once."
+    href="/contracts"
+    description="The authored surface in depth: the five kinds and the load-bearing sections, with `### Maintains` as the world-model schema doing four jobs at once."
   />
   <Card
-    title="World-model and fingerprints"
-    href="/reactor/world-model-and-fingerprints"
-    description="How a host decides a declared truth actually moved -- fingerprints of meaning, facets, and the memo key. The runtime mechanics deferred here."
+    title="Harness-agnostic"
+    href="/harness-agnostic"
+    description="The seam between the language and the host: the five VM primitives, and why the session embodies the VM."
   />
   <Card
     title="ProseScript"
-    href="/openprose/prosescript"
+    href="/prosescript"
     description="The optional imperative layer for pinning a step when declaring the outcome is not enough."
+  />
+  <Card
+    title="Setup"
+    href="/setup"
+    description="Install the skill, author a first contract, and run it where your agent lives."
   />
 </Cards>
 

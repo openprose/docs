@@ -1,4 +1,4 @@
 {
   "title": "OpenProse",
-  "pages": ["index", "openprose", "reactor", "sdk", "cli", "reactor-devtools"]
+  "pages": ["index", "setup", "declare-outcomes", "contracts", "prosescript", "typed-image", "harness-agnostic"]
 }

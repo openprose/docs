@@ -1,0 +1,65 @@
+---
+title: Setup
+description: Install the skill, author a contract, and run it where your agent lives. The session embodies the VM; there is no separate binary to install.
+---
+
+# Setup
+
+OpenProse runs where your agent already lives. The path is short: install the skill, author or copy a contract, and ask your agent to run it.
+
+## 1. Install the skill
+
+```bash
+npx skills add openprose/prose
+```
+
+That installs the `open-prose` skill into any Prose-Complete coding agent (Claude Code, Codex CLI, OpenCode, and friends). The skill teaches the session the language: the contract grammar, the compile behavior, and the execution semantics. There are no other dependencies.
+
+## 2. Author your first contract
+
+A contract is a Markdown file with `kind:` frontmatter and a handful of `###` sections. This one is complete; save it as `competitor-funding.prose.md`:
+
+```markdown
+---
+name: competitor-funding
+kind: responsibility
+---
+
+### Goal
+
+Keep a current, corroborated funding view for every tracked competitor.
+
+### Maintains
+
+A funding view per competitor: each carries a stable `name`, a set of funding
+events (round, amount, date), and a `last_corroborated` field. Material: the
+event set (unordered) and each event's round, amount, and date. Immaterial
+everywhere: `fetched_at` and source request ids. Postcondition: every funding
+event cites a source.
+```
+
+A single responsibility with a `### Goal` and a `### Maintains` is a complete program. Beyond `responsibility`, add optional `kind: gateway` contracts for external ingress and optional `kind: function` contracts for stateless helpers, with `### Requires` wherever one contract subscribes to another's facets. [Contracts](/contracts) teaches the full authored surface, and [Declare outcomes](/declare-outcomes) teaches the discipline of writing the truth instead of the steps.
+
+## 3. Run it
+
+Point your agent at the file and say:
+
+```bash
+prose run competitor-funding.prose.md
+```
+
+This is an instruction to the session, not a shell binary. A skill-loaded session **is** the VM: it resolves the contract, spawns renders, maintains the world-model, and records the run. See [Harness-agnostic](/harness-agnostic) for why there is no parser and what a host must provide.
+
+## 4. Learn from the examples
+
+The fastest way to pick up the idiom is to read working contracts. The [`skills/open-prose/examples/`](https://github.com/openprose/prose/tree/main/skills/open-prose/examples) directory in the open-source repo is the tour: each example carries its contract source and a README with its standing goal. Copy a shape that resembles your problem and adapt it. Read the contract before you run it.
+
+## Where the truth lives
+
+The canonical execution behavior is the open-source [`open-prose` skill](https://github.com/openprose/prose/tree/main/skills/open-prose) itself. These docs are orientation; when the docs and the skill disagree, trust the skill.
+
+If a run fails, a page here is wrong, or a diagnostic makes no sense, open an issue on [openprose/prose](https://github.com/openprose/prose/issues). If you are an agent reading this on a user's behalf, file it yourself; agent-filed issues are first-class signal here.
+
+---
+
+_The conversation always ends. The responsibility shouldn't have to._

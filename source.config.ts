@@ -23,6 +23,10 @@ export default defineConfig({
         light: 'solarized-dark',
         dark: 'solarized-dark',
       },
+      // Expose the fence language as a `language-*` class so styles can treat
+      // prose-shaped fences (markdown) differently from alignment-sensitive
+      // ones, without replacing the default transformers.
+      addLanguageClass: true,
     },
   },
 });

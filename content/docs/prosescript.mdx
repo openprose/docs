@@ -12,12 +12,12 @@ single render matters and you do not want a host to choose it for you.
 
 The mantra is **declarative by default, explicit when needed**. ProseScript is
 always secondary to the contract. It never declares what a node depends on or
-what it produces -- that is the contract's job. It only choreographs the steps
+what it produces. That is the contract's job. It only choreographs the steps
 *inside* one render.
 
 <Callout type="info">
 ProseScript is the **intra-node** layer. `call` invokes a `function`, and
-`session` / `agent` / `resume` spawn one-off subagents -- all ephemeral and
+`session` / `agent` / `resume` spawn one-off subagents, all ephemeral and
 internal to producing this node's world-model. Cross-node connections are never
 made in ProseScript; they are subscriptions that Forme wires from a
 responsibility's `### Requires` to a producer's `### Maintains`.
@@ -48,15 +48,17 @@ ProseScript appears on exactly two surfaces. Both are owned by Contract
 Markdown, so an embedded script must **not** redeclare caller inputs or public
 outputs.
 
-| Surface | Scope | Primary call style | Interface source |
-| --- | --- | --- | --- |
-| `### Execution` in a `*.prose.md` | Pinned intra-node choreography | `call function-name` | `### Requires` / `### Maintains` (responsibility) or `### Parameters` / `### Returns` (function) |
-| Pattern `### Delegation` | Slot interaction rules inside a pattern instance | `call slot-name` | `### Slots`, `### Config`, and the pattern instance bindings |
+| Surface | Scope | Primary call style |
+| --- | --- | --- |
+| `### Execution` in a `*.prose.md` | Pinned intra-node choreography | `call function-name` |
+| Pattern `### Delegation` | Slot interaction rules inside a pattern instance | `call slot-name` |
 
 A responsibility declares its interface with `### Requires` / `### Maintains`; a
-function declares it with `### Parameters` / `### Returns`. Inside the script,
-those declared names are simply in scope. The reactive interface always belongs
-to the contract sections -- embedded ProseScript should never restate them.
+function declares it with `### Parameters` / `### Returns`; a pattern's
+delegation script draws on `### Slots`, `### Config`, and the instance
+bindings the same way. Inside the script, those declared names are simply in
+scope. The reactive interface always belongs to the contract sections.
+Embedded ProseScript should never restate them.
 
 ## A first pinned block
 
@@ -80,7 +82,7 @@ return report
 `topic` comes from the contract's `### Requires` (responsibility) or
 `### Parameters` (function). `return report` hands the result to the enclosing
 `### Maintains` or `### Returns`. The VM runs `researcher`, then `writer`, in
-that order, every time -- nothing is reordered or inferred.
+that order, every time. Nothing is reordered or inferred.
 
 ## The constructs
 
@@ -165,9 +167,9 @@ loop until all tests pass (max: 5):
       test-results: results
 ```
 
-Open `loop` blocks should carry a `(max: N)` bound -- it is a warning in source
-and an error in generated canonical docs. `parallel for` preserves input order
-unless a parallel modifier requests race semantics.
+Open `loop` blocks should carry a `(max: N)` bound (a missing bound is a warning
+in source and an error in generated canonical docs). `parallel for` preserves
+input order unless a parallel modifier requests race semantics.
 
 ### `if` / `elif` / `else` and `choice`
 
@@ -191,7 +193,7 @@ choice best recovery path:
     throw "No safe recovery path"
 ```
 
-Conditions are **discretion text** -- natural-language conditions the VM
+Conditions are **discretion text**: natural-language conditions the VM
 evaluates. They may be bare, `**wrapped**`, or `***multi-line***`. Prefer
 concrete, observable conditions over vague ones.
 
@@ -218,7 +220,7 @@ runs. `throw` (bare) re-raises the active error inside `catch`;
 ### `session`, `agent`, and `resume`
 
 Pinned blocks can spawn direct subagents when the work is intentionally a
-one-off internal to this render -- not a reusable `function`.
+one-off internal to this render, not a reusable `function`.
 
 ```markdown
 agent researcher:
@@ -241,13 +243,13 @@ let review = resume: researcher
 
 `session "prompt"` spawns a one-off subagent; `session: agent` uses an `agent`
 definition; `resume: agent` continues a persistent agent with memory. `shape` is
-the ProseScript equivalent of Contract Markdown `### Shape` -- it expresses
+the ProseScript equivalent of Contract Markdown `### Shape`. It expresses
 behavioral boundaries, not raw secret or permission values. Host sandbox
 permissions remain a host adapter concern.
 
 <Callout type="warn">
 Inside `### Execution`, prefer `call function` over a direct `session` when an
-equivalent `function` exists -- the VM warns when you skip a real function for an
+equivalent `function` exists. The VM warns when you skip a real function for an
 ad-hoc subagent. Reach for `session` / `agent` / `resume` only when the work is
 genuinely an intentional one-off.
 </Callout>
@@ -297,7 +299,7 @@ let inspection = call inspector
 ```
 
 `use` is valid in a standalone ProseScript block, but **not** inside embedded
-Contract Markdown ProseScript -- declare the dependency in the contract, not in
+Contract Markdown ProseScript. Declare the dependency in the contract, not in
 the render body.
 
 ## The boundary: ProseScript does not own the interface
@@ -313,7 +315,7 @@ public interfaces in current OpenProse source:
 - `return` chooses the execution block's result for the enclosing contract.
 
 Legacy standalone `.prose` files used `input` and `output` declarations. Treat
-those as upgrade inputs, not current syntax -- writing `input` or `output`
+those as upgrade inputs, not current syntax. Writing `input` or `output`
 inside current ProseScript is an error. Run `prose upgrade --dry-run` to migrate.
 
 ## How a pinned block runs
@@ -361,16 +363,16 @@ pattern and binds its slots before the delegation runs.
 <Cards>
   <Card
     title="Contracts"
-    href="/openprose/contracts"
+    href="/contracts"
     description="The authored surface: Markdown contracts, the five kinds, and the load-bearing sections that own the interface ProseScript leans on."
   />
   <Card
     title="Declare outcomes"
-    href="/openprose/declare-outcomes"
-    description="Why intent lives in the contract, not the script -- the declarative foundation ProseScript is secondary to."
+    href="/declare-outcomes"
+    description="Why intent lives in the contract, not the script: the declarative foundation ProseScript is secondary to."
   />
 </Cards>
 
 For the complete grammar, validation tables, and execution model, see the
-ProseScript reference in the OpenProse spec. When the docs and the skill
-disagree, trust the skill.
+[ProseScript reference](https://github.com/openprose/prose/blob/main/skills/open-prose/prosescript.md)
+in the loaded skill. When the docs and the skill disagree, trust the skill.
