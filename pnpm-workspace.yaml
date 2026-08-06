@@ -1,0 +1,7 @@
+# Settings only — this repo is a single package, not a pnpm workspace.
+#
+# Freshly published versions are not resolvable for 48h (supply-chain cooldown).
+# Urgent security fix needed sooner? Add the package to minimumReleaseAgeExclude,
+# install, then remove it — a reviewable config change, not a standing hole.
+minimumReleaseAge: 2880
+minimumReleaseAgeExclude: []
