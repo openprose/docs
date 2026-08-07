@@ -9,7 +9,7 @@
     "url": "https://github.com/openprose/docs.git"
   },
   "homepage": "https://docs.prose.md",
-  "packageManager": "pnpm@10.11.0",
+  "packageManager": "pnpm@10.34.5",
   "scripts": {
     "postinstall": "fumadocs-mdx",
     "prebuild": "claude -p 'prose run .prose/generate-agent-skills.prose && prose run .prose/changelog-sync.prose'",
