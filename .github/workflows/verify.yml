@@ -20,6 +20,11 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Informational, not a gate: advisories here are dominated by deep
+      # transitive packages we do not control, and a permanently red step
+      # teaches everyone to ignore it. Read the output.
+      - run: pnpm audit --prod
+        continue-on-error: true
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm spell
