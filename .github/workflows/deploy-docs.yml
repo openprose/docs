@@ -29,3 +29,9 @@ jobs:
             --build-arg NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+      # The Fly health check only probes /, so it stays green when a route
+      # handler breaks. Check the route crawlers need on the live site. A
+      # failure does not roll back; it marks this run failed.
+      - name: Verify live robots.txt
+        run: scripts/check-live-robots.sh https://docs.prose.md
