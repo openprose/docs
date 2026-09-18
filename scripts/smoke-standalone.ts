@@ -43,6 +43,11 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 // <name>.html/.rsc/.meta/.segments under the app cache directory.
 const UNKNOWN_PAGE = "smoke-nonexistent-page";
 
+// A made-up file name on a real page. The og and llms.mdx handlers look the
+// page up with the last segment dropped, so rendering this on demand serves
+// Setup's image or markdown and persists a copy under this name.
+const UNKNOWN_FILE = "smoke-nonexistent";
+
 // The percent-encoded probe. Without the proxy guard it misses the static
 // /robots.txt route, matches the catch-all, and decodes to the robots
 // route's cache key.
@@ -50,6 +55,11 @@ const ROBOTS_PROBE = "/robots%2Etxt";
 
 // What the robots route logs when it reads a page entry from its cache slot.
 const ROBOTS_INVARIANT = "app-route received invalid cache entry";
+
+// What Next logs when it cannot store a route handler's response. A handler
+// that runs for an unknown page returns an empty 404, which the in-memory
+// cache refuses, so every such request prints this.
+const CACHE_WRITE_WARNING = "Failed to update prerender cache";
 
 function parseCli(): { mode: Mode; port: number } {
   const { values } = parseArgs({
@@ -176,6 +186,11 @@ function listCacheFiles(key: string): string[] {
     .sort();
 }
 
+/** Every path under APP_CACHE_DIR, nested ones included, relative and sorted. */
+function snapshotCacheTree(): string[] {
+  return readdirSync(APP_CACHE_DIR, { encoding: "utf-8", recursive: true }).sort();
+}
+
 // ---------------------------------------------------------------------------
 // Standalone assembly and server lifecycle.
 // ---------------------------------------------------------------------------
@@ -291,6 +306,21 @@ async function waitForReady(baseUrl: string, server: Server): Promise<void> {
 interface BuildArtifacts {
   robotsBody: string;
   robotsMeta: string;
+  /** Every path under APP_CACHE_DIR before the server starts. */
+  cacheTree: string[];
+}
+
+/** No line of server output contains `needle`. */
+function checkServerOutputOmits(server: Server, needle: string): void {
+  const lines = server
+    .output()
+    .split("\n")
+    .filter((line) => line.includes(needle));
+  check(
+    `server output never reports "${needle}"`,
+    lines.length === 0,
+    lines.join("\n"),
+  );
 }
 
 /** Nothing may have been written into the robots route's cache slot. */
@@ -364,6 +394,15 @@ async function runChecks(
     `found ${JSON.stringify(unknownFiles)} in ${APP_CACHE_DIR}`,
   );
 
+  // 3b. The og handler serves only the images the build generated. Anything
+  //     else 404s before the handler runs, so nothing is rendered or stored.
+  //     The tree diff and the warning check at the end cover the disk side.
+  await expectStatus(baseUrl, "/og/setup/image.png", 200, {
+    contentType: "image/png",
+  });
+  await expectStatus(baseUrl, `/og/setup/${UNKNOWN_FILE}.png`, 404);
+  await expectStatus(baseUrl, `/og/${UNKNOWN_PAGE}/image.png`, 404);
+
   // 4. Warm replay: the same probe now that /robots.txt sits in the
   //    in-memory cache, then the robots route again. Past the proxy, this
   //    ordering would read the robots entry back as a page and fail.
@@ -371,14 +410,18 @@ async function runChecks(
   checkRobotsSlot("after the warm probe", build);
   await checkRobots(baseUrl, "after the warm probe", mode, build);
 
-  const invariantLines = server
-    .output()
-    .split("\n")
-    .filter((line) => line.includes(ROBOTS_INVARIANT));
+  checkServerOutputOmits(server, ROBOTS_INVARIANT);
+  checkServerOutputOmits(server, CACHE_WRITE_WARNING);
+
+  // Every request above either hits an entry the build prerendered or is
+  // turned away, so the cache directory must still hold exactly what the
+  // build shipped. Next never evicts what a request adds here.
+  const shipped = new Set(build.cacheTree);
+  const added = snapshotCacheTree().filter((path) => !shipped.has(path));
   check(
-    `server output never reports "${ROBOTS_INVARIANT}"`,
-    invariantLines.length === 0,
-    invariantLines.join("\n"),
+    "cache dir: no request added a path",
+    added.length === 0,
+    `new paths under ${APP_CACHE_DIR}:\n${added.join("\n")}`,
   );
 }
 
@@ -390,6 +433,9 @@ async function main(): Promise<void> {
   const build: BuildArtifacts = {
     robotsBody: readFileSync(resolve(APP_CACHE_DIR, "robots.txt.body"), "utf-8"),
     robotsMeta: readFileSync(resolve(APP_CACHE_DIR, "robots.txt.meta"), "utf-8"),
+    // Taken before the server starts, so files an earlier run left behind
+    // cannot fail this one.
+    cacheTree: snapshotCacheTree(),
   };
 
   if (await isPortAnswering(baseUrl)) {
