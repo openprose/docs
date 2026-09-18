@@ -403,6 +403,14 @@ async function runChecks(
   await expectStatus(baseUrl, `/og/setup/${UNKNOWN_FILE}.png`, 404);
   await expectStatus(baseUrl, `/og/${UNKNOWN_PAGE}/image.png`, 404);
 
+  // 3c. The llms.mdx handler serves only the markdown the build generated.
+  //     Its optional catch-all also matches bare /llms.mdx, which the handler
+  //     would answer with the index page's markdown. Step 2 already requests
+  //     a canonical file and the root markdown rewrite.
+  await expectStatus(baseUrl, `/llms.mdx/setup/${UNKNOWN_FILE}.md`, 404);
+  await expectStatus(baseUrl, "/llms.mdx", 404);
+  await expectStatus(baseUrl, `/llms.mdx/${UNKNOWN_PAGE}/content.md`, 404);
+
   // 4. Warm replay: the same probe now that /robots.txt sits in the
   //    in-memory cache, then the robots route again. Past the proxy, this
   //    ordering would read the robots entry back as a page and fail.
