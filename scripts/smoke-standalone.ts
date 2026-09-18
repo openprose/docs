@@ -7,8 +7,11 @@
  * GET /robots%2Etxt fell through to the [[...slug]] catch-all, which decoded
  * the slug and wrote its 404 render into the robots route's cache slot. Every
  * later GET /robots.txt then threw "app-route received invalid cache entry".
+ * It is also where the cache directory used to grow without bound: whatever a
+ * dynamic route rendered on demand was stored under .next/server/app, and
+ * Next never deletes those files.
  *
- * Two guards are in place, and the checks map onto them:
+ * Three guards are in place, and the checks map onto them:
  * - proxy.ts answers any percent-encoded path with 404 before routing. That
  *   is what makes both probes of /robots%2Etxt return 404 and keeps them out
  *   of the robots route's cache slot (the robots.txt.* and .meta checks).
@@ -18,6 +21,13 @@
  *   catch-all, but on its own such a probe still answers 500, because Next
  *   either retries the request until it gives up or reads the robots entry
  *   back from the cache.
+ * - `dynamicParams = false` on the og and llms.mdx handlers makes made-up
+ *   file names and unknown pages under /og and /llms.mdx 404 before the
+ *   handler runs, so nothing is rendered or stored for them (the og and
+ *   llms.mdx probes, the cache-write warning check, and the check that no
+ *   request added a path to the cache directory). The prerender-manifest
+ *   check fails the run if any dynamic route would render params the build
+ *   did not generate, so a new route cannot reopen this.
  *
  * Run after `pnpm exec next build`:
  *   pnpm smoke:standalone --mode public    (DOCS_PREVIEW_MODE=false build)
@@ -34,6 +44,7 @@ const REPO_ROOT = process.cwd();
 const STANDALONE_DIR = resolve(REPO_ROOT, ".next/standalone");
 const SERVER_ENTRY = resolve(STANDALONE_DIR, "server.js");
 const APP_CACHE_DIR = resolve(STANDALONE_DIR, ".next/server/app");
+const PRERENDER_MANIFEST = resolve(STANDALONE_DIR, ".next/prerender-manifest.json");
 const CANONICAL_SITEMAP = "https://docs.prose.md/sitemap.xml";
 const BOOT_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -43,6 +54,11 @@ const SHUTDOWN_TIMEOUT_MS = 5_000;
 // <name>.html/.rsc/.meta/.segments under the app cache directory.
 const UNKNOWN_PAGE = "smoke-nonexistent-page";
 
+// A made-up file name on a real page. The og and llms.mdx handlers look the
+// page up with the last segment dropped, so rendering this on demand serves
+// Setup's image or markdown and persists a copy under this name.
+const UNKNOWN_FILE = "smoke-nonexistent";
+
 // The percent-encoded probe. Without the proxy guard it misses the static
 // /robots.txt route, matches the catch-all, and decodes to the robots
 // route's cache key.
@@ -50,6 +66,11 @@ const ROBOTS_PROBE = "/robots%2Etxt";
 
 // What the robots route logs when it reads a page entry from its cache slot.
 const ROBOTS_INVARIANT = "app-route received invalid cache entry";
+
+// What Next logs when it cannot store a route handler's response. A handler
+// that runs for an unknown page returns an empty 404, which the in-memory
+// cache refuses, so every such request prints this.
+const CACHE_WRITE_WARNING = "Failed to update prerender cache";
 
 function parseCli(): { mode: Mode; port: number } {
   const { values } = parseArgs({
@@ -176,6 +197,11 @@ function listCacheFiles(key: string): string[] {
     .sort();
 }
 
+/** Every path under APP_CACHE_DIR, nested ones included, relative and sorted. */
+function snapshotCacheTree(): string[] {
+  return readdirSync(APP_CACHE_DIR, { encoding: "utf-8", recursive: true }).sort();
+}
+
 // ---------------------------------------------------------------------------
 // Standalone assembly and server lifecycle.
 // ---------------------------------------------------------------------------
@@ -291,6 +317,42 @@ async function waitForReady(baseUrl: string, server: Server): Promise<void> {
 interface BuildArtifacts {
   robotsBody: string;
   robotsMeta: string;
+  /** Every path under APP_CACHE_DIR before the server starts. */
+  cacheTree: string[];
+}
+
+/**
+ * Every dynamic route must 404 on params the build did not generate. Any
+ * other fallback renders them on demand and caches the result on disk. This
+ * reads the same field the server consults at request time, so it holds for
+ * routes no probe below requests. A route that really needs on-demand
+ * rendering has to be exempted here on purpose, with the reason.
+ */
+function checkPrerenderManifest(): void {
+  const manifest = JSON.parse(readFileSync(PRERENDER_MANIFEST, "utf-8")) as {
+    dynamicRoutes: Record<string, { fallback: string | false | null }>;
+  };
+  const onDemand = Object.entries(manifest.dynamicRoutes)
+    .filter(([, route]) => route.fallback !== false)
+    .map(([name, route]) => `${name} (fallback: ${JSON.stringify(route.fallback)})`);
+  check(
+    "prerender manifest: every dynamic route 404s on params the build did not generate",
+    onDemand.length === 0,
+    `these routes render unknown params on demand and store the result on disk; export \`dynamicParams = false\` from each:\n${onDemand.join("\n")}`,
+  );
+}
+
+/** No line of server output contains `needle`. */
+function checkServerOutputOmits(server: Server, needle: string): void {
+  const lines = server
+    .output()
+    .split("\n")
+    .filter((line) => line.includes(needle));
+  check(
+    `server output never reports "${needle}"`,
+    lines.length === 0,
+    lines.join("\n"),
+  );
 }
 
 /** Nothing may have been written into the robots route's cache slot. */
@@ -364,6 +426,23 @@ async function runChecks(
     `found ${JSON.stringify(unknownFiles)} in ${APP_CACHE_DIR}`,
   );
 
+  // 3b. The og handler serves only the images the build generated. Anything
+  //     else 404s before the handler runs, so nothing is rendered or stored.
+  //     The tree diff and the warning check at the end cover the disk side.
+  await expectStatus(baseUrl, "/og/setup/image.png", 200, {
+    contentType: "image/png",
+  });
+  await expectStatus(baseUrl, `/og/setup/${UNKNOWN_FILE}.png`, 404);
+  await expectStatus(baseUrl, `/og/${UNKNOWN_PAGE}/image.png`, 404);
+
+  // 3c. The llms.mdx handler serves only the markdown the build generated.
+  //     Its optional catch-all also matches bare /llms.mdx, which the handler
+  //     would answer with the index page's markdown. Step 2 already requests
+  //     a canonical file and the root markdown rewrite.
+  await expectStatus(baseUrl, `/llms.mdx/setup/${UNKNOWN_FILE}.md`, 404);
+  await expectStatus(baseUrl, "/llms.mdx", 404);
+  await expectStatus(baseUrl, `/llms.mdx/${UNKNOWN_PAGE}/content.md`, 404);
+
   // 4. Warm replay: the same probe now that /robots.txt sits in the
   //    in-memory cache, then the robots route again. Past the proxy, this
   //    ordering would read the robots entry back as a page and fail.
@@ -371,14 +450,18 @@ async function runChecks(
   checkRobotsSlot("after the warm probe", build);
   await checkRobots(baseUrl, "after the warm probe", mode, build);
 
-  const invariantLines = server
-    .output()
-    .split("\n")
-    .filter((line) => line.includes(ROBOTS_INVARIANT));
+  checkServerOutputOmits(server, ROBOTS_INVARIANT);
+  checkServerOutputOmits(server, CACHE_WRITE_WARNING);
+
+  // Every request above either hits an entry the build prerendered or is
+  // turned away, so the cache directory must still hold exactly what the
+  // build shipped. Next never evicts what a request adds here.
+  const shipped = new Set(build.cacheTree);
+  const added = snapshotCacheTree().filter((path) => !shipped.has(path));
   check(
-    `server output never reports "${ROBOTS_INVARIANT}"`,
-    invariantLines.length === 0,
-    invariantLines.join("\n"),
+    "cache dir: no request added a path",
+    added.length === 0,
+    `new paths under ${APP_CACHE_DIR}:\n${added.join("\n")}`,
   );
 }
 
@@ -390,6 +473,9 @@ async function main(): Promise<void> {
   const build: BuildArtifacts = {
     robotsBody: readFileSync(resolve(APP_CACHE_DIR, "robots.txt.body"), "utf-8"),
     robotsMeta: readFileSync(resolve(APP_CACHE_DIR, "robots.txt.meta"), "utf-8"),
+    // Taken before the server starts, so files an earlier run left behind
+    // cannot fail this one.
+    cacheTree: snapshotCacheTree(),
   };
 
   if (await isPortAnswering(baseUrl)) {
@@ -398,6 +484,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Smoke-testing the ${mode} standalone build at ${baseUrl}\n`);
+  checkPrerenderManifest();
   const server = startServer(port);
 
   const onSignal = (signal: NodeJS.Signals) => {

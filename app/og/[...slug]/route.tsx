@@ -6,6 +6,12 @@ import { appName } from "@/lib/shared";
 
 export const revalidate = false;
 
+// Every image is generated at build time, one per docs page. Without this,
+// any other path the pattern matches (say /og/setup/anything.png) is rendered
+// on demand and stored on disk under the requested name, and Next never
+// evicts those files.
+export const dynamicParams = false;
+
 export async function GET(
   _req: Request,
   { params }: RouteContext<"/og/[...slug]">,
