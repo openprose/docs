@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
@@ -31,6 +31,18 @@ jobs:
       - run: pnpm check:emdash
       - run: pnpm check:links
       - run: pnpm test
-      - run: pnpm exec next build
+      # Build the standalone server in both modes and check each one over
+      # HTTP. Public mode is what production ships, so it goes first. `pnpm
+      # exec` skips the prebuild hook, matching the Dockerfile.
+      - name: Build public mode
+        run: pnpm exec next build
+        env:
+          DOCS_PREVIEW_MODE: "false"
+      - name: Smoke public build over HTTP
+        run: pnpm smoke:standalone --mode public
+      - name: Build preview mode
+        run: pnpm exec next build
         env:
           DOCS_PREVIEW_MODE: "true"
+      - name: Smoke preview build over HTTP
+        run: pnpm smoke:standalone --mode preview
