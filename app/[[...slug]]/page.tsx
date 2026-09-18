@@ -70,6 +70,14 @@ function BrandedTitle({ title }: { title: string }) {
   );
 }
 
+// Every docs page is known at build time, so an unknown slug 404s without
+// rendering or writing a cache entry. Otherwise every path a scanner tries is
+// rendered and persisted to disk, and because Next decodes the slug before
+// keying the cache, an encoded probe such as /robots%2Etxt can overwrite the
+// /robots.txt route's entry ("app-route received invalid cache entry
+// APP_PAGE"). proxy.ts also turns encoded paths away before routing.
+export const dynamicParams = false;
+
 export async function generateStaticParams() {
   return source.generateParams();
 }
