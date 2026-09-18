@@ -7,8 +7,11 @@
  * GET /robots%2Etxt fell through to the [[...slug]] catch-all, which decoded
  * the slug and wrote its 404 render into the robots route's cache slot. Every
  * later GET /robots.txt then threw "app-route received invalid cache entry".
+ * It is also where the cache directory used to grow without bound: whatever a
+ * dynamic route rendered on demand was stored under .next/server/app, and
+ * Next never deletes those files.
  *
- * Two guards are in place, and the checks map onto them:
+ * Three guards are in place, and the checks map onto them:
  * - proxy.ts answers any percent-encoded path with 404 before routing. That
  *   is what makes both probes of /robots%2Etxt return 404 and keeps them out
  *   of the robots route's cache slot (the robots.txt.* and .meta checks).
@@ -18,6 +21,13 @@
  *   catch-all, but on its own such a probe still answers 500, because Next
  *   either retries the request until it gives up or reads the robots entry
  *   back from the cache.
+ * - `dynamicParams = false` on the og and llms.mdx handlers makes made-up
+ *   file names and unknown pages under /og and /llms.mdx 404 before the
+ *   handler runs, so nothing is rendered or stored for them (the og and
+ *   llms.mdx probes, the cache-write warning check, and the check that no
+ *   request added a path to the cache directory). The prerender-manifest
+ *   check fails the run if any dynamic route would render params the build
+ *   did not generate, so a new route cannot reopen this.
  *
  * Run after `pnpm exec next build`:
  *   pnpm smoke:standalone --mode public    (DOCS_PREVIEW_MODE=false build)
@@ -34,6 +44,7 @@ const REPO_ROOT = process.cwd();
 const STANDALONE_DIR = resolve(REPO_ROOT, ".next/standalone");
 const SERVER_ENTRY = resolve(STANDALONE_DIR, "server.js");
 const APP_CACHE_DIR = resolve(STANDALONE_DIR, ".next/server/app");
+const PRERENDER_MANIFEST = resolve(STANDALONE_DIR, ".next/prerender-manifest.json");
 const CANONICAL_SITEMAP = "https://docs.prose.md/sitemap.xml";
 const BOOT_TIMEOUT_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -310,6 +321,27 @@ interface BuildArtifacts {
   cacheTree: string[];
 }
 
+/**
+ * Every dynamic route must 404 on params the build did not generate. Any
+ * other fallback renders them on demand and caches the result on disk. This
+ * reads the same field the server consults at request time, so it holds for
+ * routes no probe below requests. A route that really needs on-demand
+ * rendering has to be exempted here on purpose, with the reason.
+ */
+function checkPrerenderManifest(): void {
+  const manifest = JSON.parse(readFileSync(PRERENDER_MANIFEST, "utf-8")) as {
+    dynamicRoutes: Record<string, { fallback: string | false | null }>;
+  };
+  const onDemand = Object.entries(manifest.dynamicRoutes)
+    .filter(([, route]) => route.fallback !== false)
+    .map(([name, route]) => `${name} (fallback: ${JSON.stringify(route.fallback)})`);
+  check(
+    "prerender manifest: every dynamic route 404s on params the build did not generate",
+    onDemand.length === 0,
+    `these routes render unknown params on demand and store the result on disk; export \`dynamicParams = false\` from each:\n${onDemand.join("\n")}`,
+  );
+}
+
 /** No line of server output contains `needle`. */
 function checkServerOutputOmits(server: Server, needle: string): void {
   const lines = server
@@ -452,6 +484,7 @@ async function main(): Promise<void> {
   }
 
   console.log(`Smoke-testing the ${mode} standalone build at ${baseUrl}\n`);
+  checkPrerenderManifest();
   const server = startServer(port);
 
   const onSignal = (signal: NodeJS.Signals) => {
