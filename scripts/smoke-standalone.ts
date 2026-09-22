@@ -410,6 +410,18 @@ async function runChecks(
   await expectStatus(baseUrl, "/sitemap.xml", 200);
   await expectStatus(baseUrl, "/setup", 200, { contentType: "text/html" });
   await expectStatus(baseUrl, "/llms.mdx/setup/content.md", 200);
+  // Every page advertises <slug>.mdx as its Markdown alternate; the root
+  // advertises /index.mdx and the legacy /.mdx still resolves.
+  await expectStatus(baseUrl, "/setup.mdx", 200, {
+    contentType: "text/markdown",
+  });
+  await expectStatus(baseUrl, "/index.mdx", 200, {
+    contentType: "text/markdown",
+  });
+  await expectStatus(baseUrl, "/.mdx", 200, { contentType: "text/markdown" });
+  // A rewrite can only land on a prerendered file or a 404 (fallback: false).
+  // The tree diff at the end proves this one wrote nothing to disk.
+  await expectStatus(baseUrl, `/${UNKNOWN_PAGE}.mdx`, 404);
   // Markdown negotiation must still rewrite the docs root.
   await expectStatus(baseUrl, "/", 200, {
     contentType: "text/markdown",

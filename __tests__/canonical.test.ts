@@ -37,34 +37,42 @@ describe("robotsContent", () => {
 });
 
 describe("buildPageMetadata", () => {
-  it("emits absolute canonical URL for a nested docs path", () => {
-    const md = buildPageMetadata("/docs/get-started/install");
-    expect(md.alternates?.canonical).toBe(
-      "https://docs.prose.md/docs/get-started/install",
-    );
+  it("emits absolute canonical URL for a root-mounted docs path", () => {
+    const md = buildPageMetadata("/setup");
+    expect(md.alternates?.canonical).toBe("https://docs.prose.md/setup");
   });
 
-  it("emits .mdx markdown alternate so Fumadocs's proxy can rewrite it", () => {
-    const md = buildPageMetadata("/docs/get-started/install");
-    expect(md.alternates?.types?.["text/markdown"]).toBe(
-      "/docs/get-started/install.mdx",
-    );
+  it("emits absolute canonical URL for the root page", () => {
+    const md = buildPageMetadata("/");
+    expect(md.alternates?.canonical).toBe("https://docs.prose.md/");
+  });
+
+  it("emits <slug>.mdx as the markdown alternate so the proxy can rewrite it", () => {
+    const md = buildPageMetadata("/setup");
+    expect(md.alternates?.types?.["text/markdown"]).toBe("/setup.mdx");
+  });
+
+  it("emits /index.mdx as the root page's markdown alternate", () => {
+    // Appending .mdx to "/" would advertise "/.mdx", which reads as a dotfile
+    // and only resolved by accident of the old rewrite pattern.
+    const md = buildPageMetadata("/");
+    expect(md.alternates?.types?.["text/markdown"]).toBe("/index.mdx");
   });
 
   it("always emits /llms.txt as the text/plain alternate", () => {
-    const md = buildPageMetadata("/docs/anywhere");
+    const md = buildPageMetadata("/anywhere");
     expect(md.alternates?.types?.["text/plain"]).toBe("/llms.txt");
   });
 
   it("sets robots index/follow false in preview mode", () => {
     vi.stubEnv("DOCS_PREVIEW_MODE", "true");
-    const md = buildPageMetadata("/docs/foo");
+    const md = buildPageMetadata("/foo");
     expect(md.robots).toEqual({ index: false, follow: false });
   });
 
   it("sets robots index/follow true when preview mode is off", () => {
     vi.stubEnv("DOCS_PREVIEW_MODE", "false");
-    const md = buildPageMetadata("/docs/foo");
+    const md = buildPageMetadata("/foo");
     expect(md.robots).toEqual({ index: true, follow: true });
   });
 });

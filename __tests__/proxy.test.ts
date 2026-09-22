@@ -3,7 +3,11 @@
 // which the legacy-host redirect depends on.
 import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
-import proxy, { hasEncodedPathname, resolveDocsHostRedirect } from '../proxy';
+import proxy, {
+  hasEncodedPathname,
+  resolveDocsHostRedirect,
+  resolveMarkdownRewrite,
+} from '../proxy';
 
 describe('resolveDocsHostRedirect', () => {
   it('redirects the legacy docs host to docs.prose.md', () => {
@@ -41,7 +45,62 @@ describe('hasEncodedPathname', () => {
   });
 });
 
+describe('resolveMarkdownRewrite', () => {
+  it('maps an advertised <slug>.mdx alternate to its prerendered Markdown', () => {
+    expect(resolveMarkdownRewrite('/setup.mdx', false)).toBe(
+      '/llms.mdx/setup/content.md',
+    );
+  });
+
+  it('maps the advertised root alternate /index.mdx to the root Markdown', () => {
+    expect(resolveMarkdownRewrite('/index.mdx', false)).toBe(
+      '/llms.mdx/content.md',
+    );
+  });
+
+  it('keeps the legacy /.mdx root alternate working', () => {
+    expect(resolveMarkdownRewrite('/.mdx', false)).toBe(
+      '/llms.mdx/content.md',
+    );
+  });
+
+  it('no longer matches the old double-slash form', () => {
+    // Next 308s these before the proxy runs, so a match here would only
+    // ever have been reachable by accident.
+    expect(resolveMarkdownRewrite('//setup.mdx', false)).toBeNull();
+  });
+
+  it('leaves a page URL alone without a Markdown Accept', () => {
+    expect(resolveMarkdownRewrite('/setup', false)).toBeNull();
+  });
+
+  it('leaves /llms.txt alone without a Markdown Accept', () => {
+    expect(resolveMarkdownRewrite('/llms.txt', false)).toBeNull();
+  });
+});
+
 describe('proxy', () => {
+  it('rewrites an advertised .mdx alternate to the Markdown route', () => {
+    const res = proxy(new NextRequest('https://docs.prose.md/setup.mdx'));
+    expect(res.headers.get('x-middleware-rewrite')).toBe(
+      'https://docs.prose.md/llms.mdx/setup/content.md',
+    );
+    expect(res.headers.get('x-middleware-next')).toBeNull();
+  });
+
+  it('rewrites the root alternate /index.mdx to the root Markdown', () => {
+    const res = proxy(new NextRequest('https://docs.prose.md/index.mdx'));
+    expect(res.headers.get('x-middleware-rewrite')).toBe(
+      'https://docs.prose.md/llms.mdx/content.md',
+    );
+  });
+
+  it('rejects an encoded .mdx path before rewriting it', () => {
+    const res = proxy(new NextRequest('https://docs.prose.md/setup%2Emdx'));
+    expect(res.status).toBe(404);
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+
   it('returns 404 for a percent-encoded robots path', () => {
     const res = proxy(new NextRequest('https://docs.prose.md/robots%2Etxt'));
     expect(res.status).toBe(404);
