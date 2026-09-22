@@ -101,6 +101,8 @@ interface HttpResult {
   contentType: string;
   /** The Vary header as sent, or "" when absent. */
   vary: string;
+  /** The Location header as sent, or null when absent. */
+  location: string | null;
   body: string;
 }
 
@@ -141,6 +143,7 @@ async function get(
     status: res.status,
     contentType: res.headers.get("content-type") ?? "",
     vary: res.headers.get("vary") ?? "",
+    location: res.headers.get("location"),
     body: await res.text(),
   };
 }
@@ -170,6 +173,35 @@ async function expectStatus(
     (!options.contentType || res.contentType.startsWith(options.contentType));
   check(`${label} -> ${expectation}`, ok, describeResponse(res));
   return res;
+}
+
+/**
+ * Fetches a path and asserts a redirect status and where it points. `get`
+ * never follows redirects, so the Location header is what the client saw.
+ * Both sides are resolved against the server's origin because Next may emit
+ * a relative or an absolute Location depending on the destination.
+ */
+async function expectRedirect(
+  baseUrl: string,
+  path: string,
+  status: 307 | 308,
+  target: string,
+): Promise<void> {
+  const label = `GET ${path} -> ${status} ${target}`;
+  let res: HttpResult;
+  try {
+    res = await get(baseUrl, path);
+  } catch (error) {
+    fail(label, `request failed: ${String(error)}`);
+    return;
+  }
+  const got = res.location ? new URL(res.location, baseUrl).href : null;
+  const want = new URL(target, baseUrl).href;
+  check(
+    label,
+    res.status === status && got === want,
+    `status ${res.status}, location ${JSON.stringify(res.location)}`,
+  );
 }
 
 function checkRobotsBody(label: string, mode: Mode, res: HttpResult): void {
@@ -466,6 +498,27 @@ async function runChecks(
     contentType: "text/markdown",
     headers: { Accept: "text/markdown" },
   });
+
+  // 2b. Redirects from next.config.mjs. Page moves are permanent (308), so
+  //     search engines retire the old URL; the harness routes stay temporary
+  //     (307) because they may host docs again. Redirects answer before the
+  //     proxy runs, so none of these can touch the cache tree.
+  await expectRedirect(baseUrl, "/openprose/contracts", 308, "/contracts");
+  await expectRedirect(baseUrl, "/start/what-is-openprose", 308, "/");
+  await expectRedirect(
+    baseUrl,
+    "/cli",
+    307,
+    "https://github.com/openprose/prose/tree/main/packages/reactor-cli",
+  );
+  // An old page's advertised alternate heals too: the redirect lands on a
+  // <slug>.mdx URL the proxy now serves as Markdown.
+  await expectRedirect(
+    baseUrl,
+    "/openprose/contracts.mdx",
+    308,
+    "/contracts.mdx",
+  );
 
   // 3. Unknown paths 404 without writing anything to disk. This one reaches
   //    the catch-all, so it is `dynamicParams = false` that keeps it off disk.
