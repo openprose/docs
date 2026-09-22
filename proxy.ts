@@ -98,13 +98,20 @@ export default function proxy(request: NextRequest) {
     return NextResponse.redirect(hostRedirect, 301);
   }
 
-  const target = resolveMarkdownRewrite(
-    request.nextUrl.pathname,
-    isMarkdownPreferred(request),
-  );
+  const { pathname } = request.nextUrl;
+  const prefersMarkdown = isMarkdownPreferred(request);
+  const target = resolveMarkdownRewrite(pathname, prefersMarkdown);
 
   if (target) {
-    return NextResponse.rewrite(new URL(target, request.nextUrl));
+    // A page's HTML URL answers Markdown only because of the Accept header,
+    // so caches must key on it. The `.mdx` alternates answer Markdown to
+    // every client and are not negotiated. (Every non-negotiated target
+    // comes from an `.mdx` path: the root aliases and the suffix pattern.)
+    const negotiated = prefersMarkdown && !pathname.endsWith('.mdx');
+    return NextResponse.rewrite(
+      new URL(target, request.nextUrl),
+      negotiated ? { headers: { Vary: 'Accept' } } : undefined,
+    );
   }
 
   return NextResponse.next();

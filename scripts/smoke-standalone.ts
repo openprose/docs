@@ -99,6 +99,8 @@ function parseCli(): { mode: Mode; port: number } {
 interface HttpResult {
   status: number;
   contentType: string;
+  /** The Vary header as sent, or "" when absent. */
+  vary: string;
   body: string;
 }
 
@@ -138,6 +140,7 @@ async function get(
   return {
     status: res.status,
     contentType: res.headers.get("content-type") ?? "",
+    vary: res.headers.get("vary") ?? "",
     body: await res.text(),
   };
 }
@@ -246,12 +249,20 @@ function startServer(port: number): Server {
   // Mirror the run stage's environment. DOCS_PREVIEW_MODE is dropped on
   // purpose: the image never carries it, and the robots body must come from
   // the build, not from whatever the shell running this script has set.
+  //
+  // HOSTNAME must be the Dockerfile's 0.0.0.0, not a loopback address. Next
+  // rewrites a loopback hostname to "localhost" in request.nextUrl, so with
+  // HOSTNAME=127.0.0.1 every proxy rewrite carries an origin the router does
+  // not recognise as its own. It then treats the rewrite as external and
+  // proxies the request back to itself over HTTP, which doubles the work and
+  // drops the headers the proxy set (Vary: Accept). Production never takes
+  // that path, so the smoke run must not either.
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "production",
     NEXT_TELEMETRY_DISABLED: "1",
     PORT: String(port),
-    HOSTNAME: "127.0.0.1",
+    HOSTNAME: "0.0.0.0",
   };
   delete env.DOCS_PREVIEW_MODE;
 
@@ -424,6 +435,34 @@ async function runChecks(
   await expectStatus(baseUrl, `/${UNKNOWN_PAGE}.mdx`, 404);
   // Markdown negotiation must still rewrite the docs root.
   await expectStatus(baseUrl, "/", 200, {
+    contentType: "text/markdown",
+    headers: { Accept: "text/markdown" },
+  });
+  // Negotiation works on every page, not just the root, and tells caches
+  // so: the same URL answers HTML or Markdown depending on Accept. Next
+  // appends its own Vary line (rsc, next-router-state-tree, ...) after the
+  // proxy's, and fetch() joins repeated headers with ", ", so look for
+  // "accept" as one member of the list rather than the whole value.
+  const negotiated = await expectStatus(baseUrl, "/setup", 200, {
+    contentType: "text/markdown",
+    headers: { Accept: "text/markdown" },
+  });
+  if (negotiated) {
+    check(
+      "GET /setup (Accept: text/markdown) sets Vary: Accept",
+      /(^|,)\s*accept\s*(,|$)/i.test(negotiated.vary),
+      `vary: ${JSON.stringify(negotiated.vary)}`,
+    );
+  }
+  // The gate: a Markdown-preferring client on a non-page route gets that
+  // route, not a rewrite into a /llms.mdx path the build never generated.
+  // text/plain is the natural Accept for llms.txt, and it also satisfies
+  // isMarkdownPreferred; /llms.mdx/… is where negotiation itself lands.
+  await expectStatus(baseUrl, "/llms.txt", 200, {
+    contentType: "text/plain",
+    headers: { Accept: "text/plain" },
+  });
+  await expectStatus(baseUrl, "/llms.mdx/setup/content.md", 200, {
     contentType: "text/markdown",
     headers: { Accept: "text/markdown" },
   });

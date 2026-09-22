@@ -77,6 +77,40 @@ describe('resolveMarkdownRewrite', () => {
   it('leaves /llms.txt alone without a Markdown Accept', () => {
     expect(resolveMarkdownRewrite('/llms.txt', false)).toBeNull();
   });
+
+  describe('with a Markdown Accept', () => {
+    it("negotiates a page's HTML URL to its prerendered Markdown", () => {
+      expect(resolveMarkdownRewrite('/setup', true)).toBe(
+        '/llms.mdx/setup/content.md',
+      );
+    });
+
+    it('negotiates the root to the root Markdown', () => {
+      expect(resolveMarkdownRewrite('/', true)).toBe('/llms.mdx/content.md');
+    });
+
+    it('no longer matches the old double-slash form', () => {
+      expect(resolveMarkdownRewrite('//setup', true)).toBeNull();
+    });
+
+    // The gate: with the docs at the root the negotiated pattern matches
+    // every path, and isMarkdownPreferred is true for text/plain too. Each
+    // row is a request a Markdown-preferring client makes today that a
+    // naive catch-all would have rewritten into a 404.
+    it.each([
+      '/llms.txt',
+      '/llms-full.txt',
+      '/robots.txt',
+      '/sitemap.xml',
+      '/llms.mdx/setup/content.md',
+      '/llms.mdx/content.md',
+      '/og/setup/image.png',
+      '/_next/static/chunk.js',
+      '/.well-known/agent-skills/index.json',
+    ])('leaves the non-page route %s alone', (pathname) => {
+      expect(resolveMarkdownRewrite(pathname, true)).toBeNull();
+    });
+  });
 });
 
 describe('proxy', () => {
@@ -93,6 +127,85 @@ describe('proxy', () => {
     expect(res.headers.get('x-middleware-rewrite')).toBe(
       'https://docs.prose.md/llms.mdx/content.md',
     );
+  });
+
+  it('does not mark the .mdx alternate as negotiated', () => {
+    // The alternate answers Markdown to every client, so caches need no
+    // Accept key for it.
+    const res = proxy(new NextRequest('https://docs.prose.md/setup.mdx'));
+    expect(res.headers.get('vary')).toBeNull();
+  });
+
+  it("negotiates a page's HTML URL when the client prefers Markdown", () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/setup', {
+        headers: { accept: 'text/markdown' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-rewrite')).toBe(
+      'https://docs.prose.md/llms.mdx/setup/content.md',
+    );
+    expect(res.headers.get('vary')).toBe('Accept');
+    expect(res.headers.get('x-middleware-next')).toBeNull();
+  });
+
+  it("negotiates a page's HTML URL when the client prefers plain text", () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/setup', {
+        headers: { accept: 'text/plain' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-rewrite')).toBe(
+      'https://docs.prose.md/llms.mdx/setup/content.md',
+    );
+    expect(res.headers.get('vary')).toBe('Accept');
+  });
+
+  it('negotiates the root when the client prefers Markdown', () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/', {
+        headers: { accept: 'text/markdown' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-rewrite')).toBe(
+      'https://docs.prose.md/llms.mdx/content.md',
+    );
+    expect(res.headers.get('vary')).toBe('Accept');
+  });
+
+  it('serves HTML to a browser Accept header', () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/setup', {
+        headers: {
+          accept:
+            'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+      }),
+    );
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+
+  it('leaves /llms.txt alone when the client prefers plain text', () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/llms.txt', {
+        headers: { accept: 'text/plain' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+
+  it('leaves a /llms.mdx file alone when the client prefers Markdown', () => {
+    // This is the URL the negotiation lands on; re-negotiating it would
+    // rewrite into a path the build never generated.
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/llms.mdx/setup/content.md', {
+        headers: { accept: 'text/markdown' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
   });
 
   it('rejects an encoded .mdx path before rewriting it', () => {
