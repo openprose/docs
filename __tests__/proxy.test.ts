@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { NextRequest } from 'next/server';
 import proxy, {
   hasEncodedPathname,
+  isNegotiablePage,
   resolveDocsHostRedirect,
   resolveMarkdownRewrite,
 } from '../proxy';
@@ -107,9 +108,34 @@ describe('resolveMarkdownRewrite', () => {
       '/og/setup/image.png',
       '/_next/static/chunk.js',
       '/.well-known/agent-skills/index.json',
+      '/api/search',
+      '/api/search/openapi',
     ])('leaves the non-page route %s alone', (pathname) => {
       expect(resolveMarkdownRewrite(pathname, true)).toBeNull();
     });
+  });
+});
+
+describe('isNegotiablePage', () => {
+  it.each(['/', '/setup', '/contracts', '/harness-agnostic'])(
+    'treats the page URL %s as negotiable',
+    (pathname) => {
+      expect(isNegotiablePage(pathname)).toBe(true);
+    },
+  );
+
+  it.each([
+    '/setup.mdx',
+    '/index.mdx',
+    '/llms.txt',
+    '/robots.txt',
+    '/llms.mdx/setup/content.md',
+    '/_next/static/chunk.js',
+    '/api',
+    '/api/search',
+    '/api/search/openapi',
+  ])('does not treat %s as negotiable', (pathname) => {
+    expect(isNegotiablePage(pathname)).toBe(false);
   });
 });
 
@@ -184,6 +210,30 @@ describe('proxy', () => {
     );
     expect(res.headers.get('x-middleware-next')).toBe('1');
     expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+  });
+
+  it('leaves the search API alone for a JSON client that also accepts text', () => {
+    // `application/json, text/plain, */*` is a common HTTP client default,
+    // and text/plain alone satisfies isMarkdownPreferred.
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/api/search?q=setup', {
+        headers: { accept: 'application/json, text/plain, */*' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+    expect(res.headers.get('vary')).toBeNull();
+  });
+
+  it('leaves the search OpenAPI document alone for the same client', () => {
+    const res = proxy(
+      new NextRequest('https://docs.prose.md/api/search/openapi', {
+        headers: { accept: 'application/json, text/plain, */*' },
+      }),
+    );
+    expect(res.headers.get('x-middleware-next')).toBe('1');
+    expect(res.headers.get('x-middleware-rewrite')).toBeNull();
+    expect(res.headers.get('vary')).toBeNull();
   });
 
   it('leaves /llms.txt alone when the client prefers plain text', () => {

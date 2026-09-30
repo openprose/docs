@@ -47,10 +47,17 @@ export function hasEncodedPathname(pathname: string): boolean {
 // path, and isMarkdownPreferred is true for `Accept: text/plain` as well as
 // `text/markdown`. Docs slugs are plain kebab-case words; every other route
 // on the site (/robots.txt, /llms.txt, /llms.mdx/**, /og/**, /.well-known/**)
-// carries a dot. A wrong guess here rewrites into a path the build never
-// generated and 404s under `fallback: false`, never a wrong body.
-function looksLikeDocsPage(pathname: string): boolean {
-  return !pathname.includes('.') && !pathname.startsWith('/_next');
+// carries a dot, except the search API, whose clients commonly send
+// `Accept: application/json, text/plain, */*` and must never be rewritten.
+// A wrong guess here rewrites into a path the build never generated and
+// 404s under `fallback: false`, never a wrong body.
+export function isNegotiablePage(pathname: string): boolean {
+  return (
+    !pathname.includes('.') &&
+    !pathname.startsWith('/_next') &&
+    !pathname.startsWith('/api/') &&
+    pathname !== '/api'
+  );
 }
 
 // Returns the /llms.mdx path that serves a request as Markdown, or null.
@@ -77,7 +84,7 @@ export function resolveMarkdownRewrite(
   const suffixed = rewriteSuffix(pathname);
   if (suffixed) return suffixed;
 
-  if (prefersMarkdown && looksLikeDocsPage(pathname)) {
+  if (prefersMarkdown && isNegotiablePage(pathname)) {
     return rewriteDocs(pathname) || null;
   }
 
@@ -107,7 +114,15 @@ export default function proxy(request: NextRequest) {
     // so caches must key on it. The `.mdx` alternates answer Markdown to
     // every client and are not negotiated. (Every non-negotiated target
     // comes from an `.mdx` path: the root aliases and the suffix pattern.)
-    const negotiated = prefersMarkdown && !pathname.endsWith('.mdx');
+    //
+    // Only the Markdown side can carry this. Route handler responses keep a
+    // Vary set here (Next appends its own list after it), but App Router
+    // page responses do not: Next overwrites Vary with its RSC list before
+    // rendering, and neither this proxy nor a headers() rule in next.config
+    // survives that. So the HTML side of a page ships without `Accept` in
+    // Vary, and a shared cache in front of the site must key on Accept for
+    // page URLs itself. There is no such cache today.
+    const negotiated = prefersMarkdown && isNegotiablePage(pathname);
     return NextResponse.rewrite(
       new URL(target, request.nextUrl),
       negotiated ? { headers: { Vary: 'Accept' } } : undefined,

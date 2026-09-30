@@ -474,7 +474,8 @@ async function runChecks(
   // so: the same URL answers HTML or Markdown depending on Accept. Next
   // appends its own Vary line (rsc, next-router-state-tree, ...) after the
   // proxy's, and fetch() joins repeated headers with ", ", so look for
-  // "accept" as one member of the list rather than the whole value.
+  // "accept" as one member of the list rather than the whole value. (The
+  // HTML side cannot carry it: Next overwrites Vary on page responses.)
   const negotiated = await expectStatus(baseUrl, "/setup", 200, {
     contentType: "text/markdown",
     headers: { Accept: "text/markdown" },
@@ -497,6 +498,17 @@ async function runChecks(
   await expectStatus(baseUrl, "/llms.mdx/setup/content.md", 200, {
     contentType: "text/markdown",
     headers: { Accept: "text/markdown" },
+  });
+  // The search API has no extension, and its clients commonly send
+  // `application/json, text/plain, */*`, which satisfies isMarkdownPreferred
+  // on text/plain alone. It must answer JSON, not a rewrite into /llms.mdx.
+  await expectStatus(baseUrl, "/api/search?q=setup", 200, {
+    contentType: "application/json",
+    headers: { Accept: "application/json, text/plain, */*" },
+  });
+  await expectStatus(baseUrl, "/api/search/openapi", 200, {
+    contentType: "application/json",
+    headers: { Accept: "application/json, text/plain, */*" },
   });
 
   // 2b. Redirects from next.config.mjs. Page moves are permanent (308), so
