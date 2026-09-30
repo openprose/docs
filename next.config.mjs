@@ -24,23 +24,27 @@ const config = {
     return [
       // The early docs lived under /start/*, then under /openprose/*. The
       // site now covers one topic, so the pages live at the root; keep every
-      // old link alive.
+      // old link alive. These moves are final, so the redirects are
+      // permanent (308): browsers cache them and search engines drop the
+      // old URL and pass its signals to the new one. A temporary redirect
+      // would keep the old URLs listed as separate pages. The harness group
+      // below stays temporary; see its comment.
       {
         source: "/start/what-is-openprose",
         destination: "/",
-        permanent: false,
+        permanent: true,
       },
       // The bare entry is required: `/:path*` cannot produce `/` when the
       // wildcard matches zero segments.
       {
         source: "/openprose",
         destination: "/",
-        permanent: false,
+        permanent: true,
       },
       {
         source: "/openprose/:path*",
         destination: "/:path*",
-        permanent: false,
+        permanent: true,
       },
       ...Object.entries(harnessRoutes).map(([prefix, destination]) => ({
         source: `/${prefix}/:path*`,

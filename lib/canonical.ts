@@ -28,8 +28,10 @@ export function robotsContent(): string | null {
  * plus the agent corpus at /llms.txt), and robots index/follow directives
  * gated by preview mode.
  *
- * The markdown alternate uses the `.mdx` URL suffix because Fumadocs's
- * proxy.ts rewrites `${docsRoute}{/*path}.mdx` to the markdown route.
+ * The markdown alternate uses the `.mdx` URL suffix because
+ * resolveMarkdownRewrite in proxy.ts maps `<page.url>.mdx` to the
+ * prerendered /llms.mdx/<slug>/content.md file. The root page has no slug,
+ * so it advertises /index.mdx, which the proxy maps explicitly.
  */
 export function buildPageMetadata(path: string): Metadata {
   const preview = isPreviewMode();
@@ -37,7 +39,7 @@ export function buildPageMetadata(path: string): Metadata {
     alternates: {
       canonical: canonicalUrl(path),
       types: {
-        "text/markdown": `${path}.mdx`,
+        "text/markdown": path === "/" ? "/index.mdx" : `${path}.mdx`,
         "text/plain": "/llms.txt",
       },
     },

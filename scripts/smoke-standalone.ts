@@ -99,6 +99,10 @@ function parseCli(): { mode: Mode; port: number } {
 interface HttpResult {
   status: number;
   contentType: string;
+  /** The Vary header as sent, or "" when absent. */
+  vary: string;
+  /** The Location header as sent, or null when absent. */
+  location: string | null;
   body: string;
 }
 
@@ -138,6 +142,8 @@ async function get(
   return {
     status: res.status,
     contentType: res.headers.get("content-type") ?? "",
+    vary: res.headers.get("vary") ?? "",
+    location: res.headers.get("location"),
     body: await res.text(),
   };
 }
@@ -167,6 +173,35 @@ async function expectStatus(
     (!options.contentType || res.contentType.startsWith(options.contentType));
   check(`${label} -> ${expectation}`, ok, describeResponse(res));
   return res;
+}
+
+/**
+ * Fetches a path and asserts a redirect status and where it points. `get`
+ * never follows redirects, so the Location header is what the client saw.
+ * Both sides are resolved against the server's origin because Next may emit
+ * a relative or an absolute Location depending on the destination.
+ */
+async function expectRedirect(
+  baseUrl: string,
+  path: string,
+  status: 307 | 308,
+  target: string,
+): Promise<void> {
+  const label = `GET ${path} -> ${status} ${target}`;
+  let res: HttpResult;
+  try {
+    res = await get(baseUrl, path);
+  } catch (error) {
+    fail(label, `request failed: ${String(error)}`);
+    return;
+  }
+  const got = res.location ? new URL(res.location, baseUrl).href : null;
+  const want = new URL(target, baseUrl).href;
+  check(
+    label,
+    res.status === status && got === want,
+    `status ${res.status}, location ${JSON.stringify(res.location)}`,
+  );
 }
 
 function checkRobotsBody(label: string, mode: Mode, res: HttpResult): void {
@@ -246,12 +281,20 @@ function startServer(port: number): Server {
   // Mirror the run stage's environment. DOCS_PREVIEW_MODE is dropped on
   // purpose: the image never carries it, and the robots body must come from
   // the build, not from whatever the shell running this script has set.
+  //
+  // HOSTNAME must be the Dockerfile's 0.0.0.0, not a loopback address. Next
+  // rewrites a loopback hostname to "localhost" in request.nextUrl, so with
+  // HOSTNAME=127.0.0.1 every proxy rewrite carries an origin the router does
+  // not recognise as its own. It then treats the rewrite as external and
+  // proxies the request back to itself over HTTP, which doubles the work and
+  // drops the headers the proxy set (Vary: Accept). Production never takes
+  // that path, so the smoke run must not either.
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     NODE_ENV: "production",
     NEXT_TELEMETRY_DISABLED: "1",
     PORT: String(port),
-    HOSTNAME: "127.0.0.1",
+    HOSTNAME: "0.0.0.0",
   };
   delete env.DOCS_PREVIEW_MODE;
 
@@ -410,11 +453,84 @@ async function runChecks(
   await expectStatus(baseUrl, "/sitemap.xml", 200);
   await expectStatus(baseUrl, "/setup", 200, { contentType: "text/html" });
   await expectStatus(baseUrl, "/llms.mdx/setup/content.md", 200);
+  // Every page advertises <slug>.mdx as its Markdown alternate; the root
+  // advertises /index.mdx and the legacy /.mdx still resolves.
+  await expectStatus(baseUrl, "/setup.mdx", 200, {
+    contentType: "text/markdown",
+  });
+  await expectStatus(baseUrl, "/index.mdx", 200, {
+    contentType: "text/markdown",
+  });
+  await expectStatus(baseUrl, "/.mdx", 200, { contentType: "text/markdown" });
+  // A rewrite can only land on a prerendered file or a 404 (fallback: false).
+  // The tree diff at the end proves this one wrote nothing to disk.
+  await expectStatus(baseUrl, `/${UNKNOWN_PAGE}.mdx`, 404);
   // Markdown negotiation must still rewrite the docs root.
   await expectStatus(baseUrl, "/", 200, {
     contentType: "text/markdown",
     headers: { Accept: "text/markdown" },
   });
+  // Negotiation works on every page, not just the root, and tells caches
+  // so: the same URL answers HTML or Markdown depending on Accept. Next
+  // appends its own Vary line (rsc, next-router-state-tree, ...) after the
+  // proxy's, and fetch() joins repeated headers with ", ", so look for
+  // "accept" as one member of the list rather than the whole value. (The
+  // HTML side cannot carry it: Next overwrites Vary on page responses.)
+  const negotiated = await expectStatus(baseUrl, "/setup", 200, {
+    contentType: "text/markdown",
+    headers: { Accept: "text/markdown" },
+  });
+  if (negotiated) {
+    check(
+      "GET /setup (Accept: text/markdown) sets Vary: Accept",
+      /(^|,)\s*accept\s*(,|$)/i.test(negotiated.vary),
+      `vary: ${JSON.stringify(negotiated.vary)}`,
+    );
+  }
+  // The gate: a Markdown-preferring client on a non-page route gets that
+  // route, not a rewrite into a /llms.mdx path the build never generated.
+  // text/plain is the natural Accept for llms.txt, and it also satisfies
+  // isMarkdownPreferred; /llms.mdx/… is where negotiation itself lands.
+  await expectStatus(baseUrl, "/llms.txt", 200, {
+    contentType: "text/plain",
+    headers: { Accept: "text/plain" },
+  });
+  await expectStatus(baseUrl, "/llms.mdx/setup/content.md", 200, {
+    contentType: "text/markdown",
+    headers: { Accept: "text/markdown" },
+  });
+  // The search API has no extension, and its clients commonly send
+  // `application/json, text/plain, */*`, which satisfies isMarkdownPreferred
+  // on text/plain alone. It must answer JSON, not a rewrite into /llms.mdx.
+  await expectStatus(baseUrl, "/api/search?q=setup", 200, {
+    contentType: "application/json",
+    headers: { Accept: "application/json, text/plain, */*" },
+  });
+  await expectStatus(baseUrl, "/api/search/openapi", 200, {
+    contentType: "application/json",
+    headers: { Accept: "application/json, text/plain, */*" },
+  });
+
+  // 2b. Redirects from next.config.mjs. Page moves are permanent (308), so
+  //     search engines retire the old URL; the harness routes stay temporary
+  //     (307) because they may host docs again. Redirects answer before the
+  //     proxy runs, so none of these can touch the cache tree.
+  await expectRedirect(baseUrl, "/openprose/contracts", 308, "/contracts");
+  await expectRedirect(baseUrl, "/start/what-is-openprose", 308, "/");
+  await expectRedirect(
+    baseUrl,
+    "/cli",
+    307,
+    "https://github.com/openprose/prose/tree/main/packages/reactor-cli",
+  );
+  // An old page's advertised alternate heals too: the redirect lands on a
+  // <slug>.mdx URL the proxy now serves as Markdown.
+  await expectRedirect(
+    baseUrl,
+    "/openprose/contracts.mdx",
+    308,
+    "/contracts.mdx",
+  );
 
   // 3. Unknown paths 404 without writing anything to disk. This one reaches
   //    the catch-all, so it is `dynamicParams = false` that keeps it off disk.
