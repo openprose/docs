@@ -1,14 +1,15 @@
 ---
 title: OpenProse
-description: State what an agent must accomplish, which requirements it must satisfy, and where it can choose its approach. Reuse and combine Markdown contracts.
+description: Express intent by composing requirements. Execute contracts and evaluate results.
 ---
 
 # OpenProse
 
-**With OpenProse, you state what an agent must accomplish, which requirements it
-must satisfy, and where it can choose its approach.** Contract authoring is
+Contract authoring is
 expressing intent by composing requirements. Reusable contracts provide the
 building blocks; composition determines how their requirements apply together.
+
+An agent performs the work, and an evaluator assesses whether the contract's requirements are satisfied. The executor returns a result that includes evidence for the assessment. Execution and evaluation repeat as needed.
 
 These docs cover the public `open-prose` skill's **Contract Markdown and
 ProseScript** format. A `responsibility` expresses requirements for information
