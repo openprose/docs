@@ -7,8 +7,7 @@ description: Express intent through requirements. Reuse and combine contracts wh
 
 # Contract authoring
 
-State what the agent must accomplish, which requirements it must satisfy, and
-where it can choose its approach. **Contract authoring is expressing intent by
+**Contract authoring is expressing intent by
 composing requirements.** A contract states those requirements and the context
 needed to interpret and apply them.
 
@@ -19,6 +18,33 @@ to cite a source. Supplying inputs and connecting contracts makes that request
 concrete; it does not by itself establish that the result is accurate.
 
 <span id="instructions-decay-outcomes-endure" />
+
+## Execution and evaluation
+
+An agent performs the work, and an evaluator assesses whether the contract's
+requirements are satisfied. The **executor** performs the work and returns a
+**result** that includes the evidence needed for assessment. The **evaluator**
+returns an **assessment**: its findings about the contract and the evidence.
+Execution and evaluation repeat as needed. Evaluation can also assess the
+current state before further execution.
+
+These are roles. The same agent can perform both unless a composed contract
+requires independence. A decision model can perform evaluation. Authors
+compose contracts for evidence, review and authorization just as they compose
+contracts for the rest of the work.
+
+A result can be a long document containing or referencing artifacts and
+records. Keep its references accessible to the evaluator. Evidence belongs in
+the result, not in a separate return value. Fulfillment means satisfaction of
+the contract's applicable requirements; returning a result does not establish
+fulfillment by itself.
+
+Use **out** for the normal result channel and **error** for execution failure.
+An evaluator can return a normal assessment that finds unmet requirements or
+insufficient evidence in its subject. Preserve partial work and effects when
+execution fails. These concepts map to the selected runtime's existing
+interfaces: function returns, responsibility state and receipts, and declared
+errors. They do not add syntax or prescribe operating-system streams.
 
 ## Requirements and approaches
 
