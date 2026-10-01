@@ -39,9 +39,9 @@ describe(".well-known/agent-skills/index.json", () => {
     expect(manifest.skills.length).toBeGreaterThan(0);
   });
 
-  it("each skill URL points to docs.openprose.ai", () => {
+  it("each skill URL points to docs.prose.md", () => {
     for (const skill of manifest.skills) {
-      expect(skill.url.startsWith("https://docs.openprose.ai/")).toBe(true);
+      expect(skill.url.startsWith("https://docs.prose.md/")).toBe(true);
     }
   });
 });

@@ -28,7 +28,7 @@ production build leaves the repo.
 - `repo_root`: absolute path to the prose-docs/ checkout
 - `manifest_path`: `<repo_root>/public/.well-known/agent-skills/index.json`
 - `skill_glob`: `<repo_root>/public/.well-known/agent-skills/**/SKILL.md`
-- `canonical_base_url`: `https://docs.openprose.ai`
+- `canonical_base_url`: `https://docs.prose.md`
 
 ### Ensures
 

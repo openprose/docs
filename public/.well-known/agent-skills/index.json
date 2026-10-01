@@ -1,14 +1,14 @@
 {
   "$schema": "https://agentskills.io/schemas/agent-skills-index.v0.2.0.json",
   "version": "0.2.0",
-  "generatedAt": "2026-04-28T00:00:00.000Z",
+  "generatedAt": "2026-10-01T03:53:40.326Z",
   "skills": [
     {
       "name": "OpenProse Getting Started",
       "type": "documentation",
-      "description": "Onboard a developer to OpenProse: programs as Markdown contracts, agents as runtimes.",
-      "url": "https://docs.openprose.ai/.well-known/agent-skills/openprose-getting-started/SKILL.md",
-      "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      "description": "Express intent through requirements, reuse contracts, and check the selected host capabilities.",
+      "url": "https://docs.prose.md/.well-known/agent-skills/openprose-getting-started/SKILL.md",
+      "sha256": "5980f9db1cca8c35a500cffb91f096c0d334cce6ebb3520b51220a2e82e99ca0"
     }
   ]
 }

@@ -1,14 +1,13 @@
 ---
 title: ProseScript
-description: The optional imperative pinning layer inside ### Execution. Declarative by default, explicit when needed. Contract Markdown owns the interface; ProseScript only choreographs one render.
+description: Specify required steps and their order inside one render. Contract Markdown declares the interface; ProseScript describes the procedure.
 ---
 
 # ProseScript
 
-Contract Markdown is declarative. You write down the world you want to keep
-true, and the harness decides the graph. ProseScript is the **pinning layer**:
-the optional imperative script you reach for when the *order* of work inside a
-single render matters and you do not want a host to choose it for you.
+Contract Markdown states requirements and interfaces. ProseScript specifies
+required steps inside one render when their order or method matters. This
+optional imperative layer leaves the interface in the surrounding contract.
 
 The mantra is **declarative by default, explicit when needed**. ProseScript is
 always secondary to the contract. It never declares what a node depends on or
@@ -25,9 +24,10 @@ responsibility's `### Requires` to a producer's `### Maintains`.
 
 ## When to pin, and when not to
 
-Use Contract Markdown when the *end state* matters and the host can pick the
-graph. Use ProseScript when **order, loops, branching, retries, parallelism, or
-exact call choreography** matter and you want them written down, not inferred.
+Use Contract Markdown to declare requirements and dependencies. Use ProseScript
+when **order, loops, branching, retries, parallelism, or exact call choreography**
+are required. Those steps constrain the permitted approach; they do not replace
+the requirements for the result.
 
 The Prose VM follows pinned choreography exactly. It does not infer new
 parallelism, reorder calls, or add missing calls. That precision is the whole
@@ -364,12 +364,12 @@ pattern and binds its slots before the delegation runs.
   <Card
     title="Contracts"
     href="/contracts"
-    description="The authored surface: Markdown contracts, the five kinds, and the load-bearing sections that own the interface ProseScript leans on."
+    description="The authored surface: Markdown contracts, the five kinds, and the recognized sections that own the interface ProseScript leans on."
   />
   <Card
-    title="Declare outcomes"
+    title="Contract authoring"
     href="/declare-outcomes"
-    description="Why intent lives in the contract, not the script: the declarative foundation ProseScript is secondary to."
+    description="How requirements and required steps work together, and where the agent can choose its approach."
   />
 </Cards>
 
