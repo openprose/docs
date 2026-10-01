@@ -1,25 +1,24 @@
 ---
 title: Contracts
-description: The authored surface of OpenProse, covering Markdown contracts, the five kinds, and the load-bearing sections that turn a declaration into a typed, subscribable node.
+description: Write requirements in Contract Markdown. Learn the five contract kinds and the sections that define inputs, maintained state, required steps, and limits.
 ---
 
 # Contracts
 
-A contract is the thing you author. It is a Markdown file (`*.prose.md`)
-with a small YAML frontmatter and a handful of `###` sections. The Markdown,
-with its durable trail, is the public artifact: it can leave for any
-Prose-Complete harness with no lost semantics. The deployment's secrets and
-data stay private.
+A contract states requirements and the context needed to interpret and apply
+them. Authors specify what the agent must accomplish, the conditions it must
+satisfy, and the choices it may make. Humans and agents can both author and
+reuse contracts.
 
-Authors are co-equal. A human and an agent write contracts the same way, read
-the same sections, and fork or compose each other's work without translation.
-Every section below is designed for both readers from the start.
+This page describes the public skill's **Contract Markdown** format:
+`*.prose.md` files with YAML frontmatter and recognized `###` sections. The
+five kinds support standing work, one-time calls, external inputs, tests, and
+reusable coordination. [Contract authoring](/declare-outcomes) explains how to
+use these building blocks to express requirements together.
 
-This page is the authored surface only (what you write). The runtime that
-*serves* these contracts (fingerprints, memoization, the continuity clock,
-receipts) is the harness's concern; see
-[Harness-agnostic](/harness-agnostic) for that seam. Here, intent
-lives only in the contract.
+The sections declare requirements and interfaces. The selected host supplies
+tools and runtime behavior; see [Harness-agnostic](/harness-agnostic) for that
+boundary and implementation limits.
 
 ## Frontmatter and identity
 
@@ -29,10 +28,11 @@ A contract opens with YAML frontmatter. Two fields carry weight:
   one field that changes how the file is executed.
 - `name:` is the human-facing slug.
 
-A third field, `id:`, is a durable identity (a base32 token) minted once by
-tooling and preserved across `name:` and filename renames. You do not
-hand-write `id:`; tooling manages it. `name:` is what you read; `id:` is what
-keys the node's world-model and receipt-ledger state on disk.
+An optional `id:` gives a responsibility or gateway a source identity that
+survives `name:` and filename renames. Without it, the slug is the identity.
+The language repository's `scripts/mint-contract-id.mjs` tool mints the
+26-character base32 value. The compiled node key identifies a particular mount;
+it is distinct from the optional source `id:`.
 
 ## The five kinds
 
@@ -40,7 +40,7 @@ keys the node's world-model and receipt-ledger state on disk.
 
 | Kind | Run model | Purpose |
 | --- | --- | --- |
-| `responsibility` | Served (continuously reconciled) | The headline kind: a mounted DAG node maintaining a standing truth over time. |
+| `responsibility` | Served (continuously reconciled) | A mounted DAG node with requirements for state maintained over time. |
 | `function` | Called (one-shot) | A stateless, ephemeral helper. Bind `### Parameters`, run one render, return `### Returns`. No Forme phase, no world-model. |
 | `gateway` | Mounted as external-driven | Sugar for an external-driven responsibility. Compiles into a trigger registration for the serving host; refuses a direct `run`. |
 | `test` | Via the test path | Fixtures plus natural-language assertions against a subject responsibility or function. |
@@ -52,24 +52,27 @@ subscription between responsibilities; intra-node composition is an imperative
 `call` inside one render. There is never an internally-autowired graph kind.
 
 <Callout type="info">
-The headline kind is `responsibility`. The rest of this page teaches its
-load-bearing sections, because those are what make a contract a *typed,
-subscribable node* rather than a bare prompt.
+The rest of this page focuses on `responsibility`: its declared inputs,
+maintained state, and conditions for carrying out the work. Functions use the
+separate call interface described below.
 </Callout>
 
-## The load-bearing sections
+<span id="the-load-bearing-sections" />
 
-Most `###` sections mean exactly what their name says. `### Description` is a
-human summary preserved for readers, not a contract. `### Goal` is the render's
-one-sentence standing intent. These defer to the obvious.
+## The recognized sections
 
-Three sections carry the semantic load of a `responsibility`, and the contract
-must *state* them rather than defer: `### Requires`, `### Maintains`, and
-`### Continuity`.
+`### Description` is a summary for readers. `### Goal` states the intended
+result. Use the recognized semantic sections for the requirements that guide
+execution.
+
+The following sections describe a responsibility's subscriptions, maintained
+state, and wake source: `### Requires`, `### Maintains`, and `### Continuity`.
+`### Invariants` states limits that must hold during the work; `### Execution`
+can specify required steps. Use the sections applicable to the contract.
 
 ### `### Maintains`: the world-model schema (four jobs at once)
 
-`### Maintains` is the schema for the truth this node keeps current. It does
+`### Maintains` is the schema for the state this node maintains. It does
 four jobs in one section:
 
 1. It **types** the maintained truth, the shape of the world-model the node
@@ -81,11 +84,12 @@ four jobs in one section:
 4. It states **postconditions** that a render must satisfy before it may
    commit.
 
-There is no separate judge and no `### Criteria` section. Satisfaction folds
-into `### Maintains`: checked deterministically where it can be written as a
-validator, and self-attested by the render where it is semantic. A render that
-cannot satisfy its postconditions commits nothing. The prior truth stands,
-and a `failed` receipt records why.
+There is no separate judge and no `### Criteria` section in this format.
+`### Maintains` states postconditions: deterministic validators can check some,
+while semantic conditions rely on render self-attestation. The language
+requires a render that cannot satisfy its postconditions to leave prior state
+unchanged and report failure. Actual enforcement and receipt detail depend on
+the host; see [implementation limits](/harness-agnostic#implementation-status).
 
 ### Facets make subscription structural
 
@@ -99,10 +103,9 @@ part of the truth. The facet's name is, at once, three things:
   `Requires.<facet>` ↔ `Maintains.<facet>`);
 - and its **region** of the world-model.
 
-Declaring no parts is the atomic default (one truth, one token) and costs
-nothing. This adds no new grammar: it reuses the heading hierarchy and the
-Requires↔Maintains join. **Structure is subscription.** The way you shape the
-`### Maintains` section *is* the way downstream nodes subscribe to it.
+With no named parts, the whole state is one atomic facet. Named facets reuse
+the heading hierarchy and the Requires↔Maintains connection. The parts you
+define in `### Maintains` determine what downstream nodes can subscribe to.
 
 ### `### Requires`: what the node subscribes to
 
@@ -127,9 +130,9 @@ should re-render. It is **not a schedule**. A node is *input-driven* by default
 - *external-driven*, which marks a `kind: gateway` so an ingress event wakes
   it.
 
-The author writes these sections. The harness owns the fingerprinting, the
-forecast cadence, the receipts, and the subscription wiring. You declare the
-truth; the runtime decides, deterministically, when it is worth recomputing.
+The author states the requirements in these sections. A serving host provides
+fingerprinting, cadence, receipts, and subscription processing. Its supported
+wake sources determine when it attempts the work.
 
 ## Functions: the call interface
 
@@ -144,7 +147,12 @@ A lone function has no Forme phase: bind parameters, spawn one render, return
 
 ## A contract in full
 
-Here is a real, migrated `responsibility`. Read it top to bottom: the `> `
+The following retained source snapshots illustrate how a `responsibility` and
+its gateway connect. They predate the current section cleanup and are shown
+verbatim; `### Continuity recheck` in the gateway is an older heading. For
+current runnable source, use the [skill 0.18.0 basic-unit-suite](https://github.com/openprose/prose/tree/770cebc9e03a7150a73bd454b7a6da307595ff9d/skills/open-prose/examples/basic-unit-suite/src).
+
+Read the responsibility top to bottom: the `> `
 description states intent for a human, `### Requires` names the single facet it
 subscribes to, `### Maintains` types the `CountSummary` truth and declares one
 `#### structured` facet with an explicit postcondition, and `### Continuity`
@@ -160,11 +168,10 @@ metadata-only event moves `raw_events` (waking the auditor) without moving
 
 <ProseProgram src="vendor/prose-examples/basic-unit-suite/src/counter-events.prose.md" />
 
-A bare prompt is `any`: it tells an agent what to do once and forgets. A
-contract is a typed function over the world: a declared truth with a fingerprint,
-named facets others can subscribe to, and postconditions it must satisfy before
-it commits. That is the whole difference, and it is authored entirely in
-Markdown.
+These examples combine a gateway's published inputs with a responsibility's
+requirements for a summary. The declared interfaces make the composition
+inspectable. Evidence and checks still determine whether a particular result
+satisfies those requirements.
 
 ## Where to go next
 
@@ -172,7 +179,7 @@ Markdown.
   <Card
     title="ProseScript"
     href="/prosescript"
-    description="The optional imperative pinning layer inside ### Execution, for when declarative defaults are not enough."
+    description="The optional imperative layer inside ### Execution, for when declarative defaults are not enough."
   />
   <Card
     title="Harness-agnostic"
@@ -180,9 +187,9 @@ Markdown.
     description="How a host serves a ### Maintains schema. Fingerprints, memoization, and receipts are one host's runtime, not language features."
   />
   <Card
-    title="Declare outcomes"
+    title="Contract authoring"
     href="/declare-outcomes"
-    description="The paradigm under the contract: why you declare a standing truth instead of a sequence of instructions."
+    description="State requirements, reuse contracts, and leave appropriate choices to the agent."
   />
   <Card
     title="Set up a project"

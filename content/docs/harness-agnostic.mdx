@@ -1,19 +1,18 @@
 ---
 title: Harness-agnostic
-description: OpenProse contracts describe an abstract VM. Any Prose-Complete host can run them, and the SKILL-loaded session embodies that VM. There is no parser.
+description: Contracts state requirements; hosts supply tools, state, and execution capabilities. Learn the public skill interface and its implementation limits.
 ---
 
 # Harness-agnostic
 
-A `.prose.md` contract does not name a host. It declares an ideal world-model
-and, optionally, a fulfillment plan, in terms of an abstract VM. Anything that
-can map that VM's primitives onto real capabilities can run the same contract.
-This is the deliberate seam at the center of OpenProse: **the language is one
-layer, the host is another**, and you author against the language.
+A contract states requirements independently of a particular host. In the
+public skill format, an agent follows the OpenProse VM instructions and maps
+them to the host's tools. A compatible host must support the needed operations,
+inputs, and permissions to carry out the contract.
 
-This is why "harness-agnostic" is a property of the contract, not a promise from
-any one runtime. The wisdom of the ancients applies: you write to an interface,
-and the interface outlives any single implementation.
+Reusing a contract preserves its requirements. It does not provide unavailable
+tools or make different models produce identical results. Check the host's
+capabilities against the work you are requesting.
 
 ## The VM primitives a host must provide
 
@@ -29,11 +28,10 @@ and any host:
 | `copy_binding` | Publish a declared output through that same durable store; never publish undeclared scratch |
 | `check_env` | Confirm an environment variable exists without exposing its value |
 
-A host that can do these five things can execute any OpenProse contract. The
-contract never reaches past this table. It does not know whether `spawn_session`
-becomes a subagent call in Claude Code, a `codex-sdk` activation, or a bounded
-session inside some other host. It only knows that a render runs in isolation
-with the paths it declared.
+These operations define the VM interface. A particular contract can still need
+data access, tools, permissions, and serving features beyond the interface
+itself. The host maps `spawn_session` to its session mechanism and must honor
+the declared paths and isolation requirements.
 
 <Callout type="info">
 The mapping is the host's job, not yours. Codex-style and Claude Code-style
@@ -43,12 +41,14 @@ execute trivial single-render runs inline and must report the limitation rather
 than pretend.
 </Callout>
 
-## The same Markdown runs on any host
+<span id="the-same-markdown-runs-on-any-host" />
 
-Because the contract speaks only in VM primitives, the **same file** runs
-unchanged across hosts. You do not maintain a Claude variant and a Codex
-variant. You maintain one `.prose.md`. The host changes; the declared outcome
-does not.
+## Reuse Markdown across compatible hosts
+
+A contract can be reused across compatible hosts without rewriting its
+requirements. The host changes; the conditions the work must satisfy remain.
+Portability requires a compatible skill version and the capabilities used by
+the contract.
 
 Concretely, a shell line like:
 
@@ -62,14 +62,13 @@ not what the contract asks for.
 
 ## The session embodies the VM: there is no parser
 
-This is the load-bearing idea, and it is easy to miss because it inverts the
-usual assumption. OpenProse is **never parsed or interpreted**. There is no
-`.prose` parser, no bytecode, no interpreter loop that walks the Markdown.
+The public skill has no separate parser or bytecode
+interpreter. An agent reads and interprets the Markdown instructions.
 
 Instead, a SKILL-loaded agent session **is** the VM. When a Prose-Complete host
 loads the `open-prose` skill and reads a contract, the session itself carries
 the execution semantics: it resolves the contract, spawns renders, maintains the
-world-model, and signs receipts. The intelligence is the runtime. Even a compile
+world-model, and records receipts. The intelligence is the runtime. Even a compile
 step is an agent session. The topology, the canonicalizer, and the validators
 are all session output, not parser output.
 
@@ -79,9 +78,8 @@ and never parses `.prose` semantics itself. The CLI is plumbing; the
 SKILL-loaded session is the machine.
 </Callout>
 
-This is what makes the language portable without a shared runtime binary. There
-is nothing to port. Any host that can host a capable agent session, and can map
-the five primitives, already has everything the language needs.
+This separates the authored requirements from a particular runtime binary.
+The agent and host still need the capabilities required for each run.
 
 ## The language/harness seam
 
@@ -103,7 +101,25 @@ with surprise rather than the clock. The contract you author is the same
 whether or not a host chooses to memoize it. One such host today is
 **Reactor**, the deterministic harness built alongside the language; its
 reference lives with the packages in the
-[openprose/prose repo](https://github.com/openprose/prose#reactor-the-recommended-harness).
+[openprose/prose repo](https://github.com/openprose/prose#harnesses).
+
+## Implementation status
+
+Language requirements and implemented enforcement are different. The
+[public language specification at revision `770cebc9`](https://github.com/openprose/prose/blob/770cebc9e03a7150a73bd454b7a6da307595ff9d/spec/01-Language.md#part-iii--what-is-next)
+records several gaps, including these facts about reference harness 0.3.3:
+
+- Self-driven freshness uses a fixed poll interval rather than scheduling each
+  facet at its `valid_until` time.
+- Deterministic postcondition validators exist, but the commit gate is not
+  connected to the live path; commits rely on render self-attestation.
+- Durable receipts do not retain all the specified failure detail.
+
+That specification also identifies enforcement of `### Invariants` and
+cryptographic signing as gaps. A declared limit, a receipt, and verified
+satisfaction are different things. Check the version and status of the host
+you select before relying on those capabilities. These docs do not establish
+that a newer host has closed the recorded gaps.
 
 ## Where to go next
 
@@ -116,7 +132,7 @@ reference lives with the packages in the
   <Card
     title="Contracts"
     href="/contracts"
-    description="The authored surface: the five kinds and the load-bearing sections."
+    description="The authored surface: the five kinds and the recognized sections."
   />
 </Cards>
 

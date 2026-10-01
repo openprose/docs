@@ -1,13 +1,28 @@
 ---
 title: OpenProse
-description: A declarative language for standing AI work. You declare the outcomes you want kept true, in Markdown contracts, and any Prose-Complete agent harness runs them.
+description: State what an agent must accomplish, which requirements it must satisfy, and where it can choose its approach. Reuse and combine Markdown contracts.
 ---
 
 # OpenProse
 
-**OpenProse is a declarative language for standing AI work.** You write Markdown contracts (`*.prose.md`) that declare an ideal world-model: the truths you want kept current. You say what must stay true, and the host session works out the model work it takes to keep it that way. When order, loops, or exact choreography genuinely matter, optional imperative **ProseScript** plans drop in. Declarative by default, imperative where you want the control.
+**With OpenProse, you state what an agent must accomplish, which requirements it
+must satisfy, and where it can choose its approach.** Contract authoring is
+expressing intent by composing requirements. Reusable contracts provide the
+building blocks; composition determines how their requirements apply together.
 
-The language ships as a skill. Install it, and any Prose-Complete coding agent (any agent host that can spawn sessions, read and write files, and call tools: Claude Code, Codex CLI, OpenCode, and friends) can author and run contracts:
+These docs cover the public `open-prose` skill's **Contract Markdown and
+ProseScript** format. A `responsibility` expresses requirements for information
+or conditions maintained over time. A `function` provides a one-time call.
+ProseScript specifies required steps when their order or method matters.
+
+<Callout type="info">
+The syntax here was checked against [skill 0.18.0, runtime contract 2](https://github.com/openprose/prose/blob/770cebc9e03a7150a73bd454b7a6da307595ff9d/skills/open-prose/SKILL.md).
+Use the format supported by your installed skill. Requirements describe what
+must happen; tools, permissions, continuous operation, and enforcement depend
+on the selected host. See [Harness-agnostic](/harness-agnostic).
+</Callout>
+
+Install the language skill in a compatible coding agent, then provide the tools and inputs your contract needs:
 
 ```bash
 npx skills add openprose/prose
@@ -24,14 +39,14 @@ From there, point your agent at a contract and say `prose run <file>`. The sessi
     description="Install the skill, author a first contract, and run it where your agent lives."
   />
   <Card
-    title="Declare outcomes"
+    title="Contract authoring"
     href="/declare-outcomes"
-    description="The central teaching: author a truth to keep current, not a sequence of steps to run. Why a contract is a typed function where a bare prompt is `any`."
+    description="Express intent through requirements, combine reusable contracts, and distinguish completing work from evidence that it meets the requirements."
   />
   <Card
     title="Contracts"
     href="/contracts"
-    description="The authored surface: the five kinds and the load-bearing sections. Structure is subscription."
+    description="The authored surface: the five kinds and the recognized sections. Learn how declared inputs and outputs connect."
   />
   <Card
     title="ProseScript"
@@ -42,7 +57,7 @@ From there, point your agent at a contract and say `prose run <file>`. The sessi
 
 ## The shape of a contract
 
-You author **Responsibilities**: standing goals, written as Markdown contracts. A responsibility declares what it subscribes to (`### Requires`) and the truth it keeps current (`### Maintains`):
+For ongoing work, author a `responsibility`. It declares the inputs it subscribes to (`### Requires`) and the state it must maintain (`### Maintains`). This fragment assumes a separate telemetry responsibility supplies `usage`:
 
 ```markdown
 ---
@@ -66,11 +81,13 @@ account carries a `valid_until`. Postcondition: every flagged account
 cites a corroborating signal.
 ```
 
-`### Maintains` is the load-bearing section: the schema of the truth this contract keeps current. [Contracts](/contracts) teaches it in depth, along with the five kinds and the rest of the authored surface.
+`### Maintains` is the section that defines maintained state: the schema for the state this contract maintains. [Contracts](/contracts) teaches it in depth, along with the five kinds and the rest of the authored surface.
 
-How a host *serves* that contract set (memoization, receipts, a reconciler) is the host's concern, not the language's. The contract is the public artifact; it runs unchanged on any compliant host. See [Harness-agnostic](/harness-agnostic) for the seam.
+The host serves the contract set using its available runtime capabilities, such as memoization, receipts, and a reconciler. The authored requirements remain the same when you change compatible hosts; successful execution still depends on the host and the required inputs. See [Harness-agnostic](/harness-agnostic) for that boundary.
 
-## Where the truth lives
+<span id="where-the-truth-lives" />
+
+## Source of execution rules
 
 The canonical execution behavior lives in the open-source `open-prose` skill in the [`openprose/prose`](https://github.com/openprose/prose) repo. These docs are orientation; if the docs and the skill disagree, trust the skill.
 
