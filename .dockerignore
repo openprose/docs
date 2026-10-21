@@ -10,6 +10,8 @@ README.md
 LICENSE
 docs/
 __tests__/
-scripts/
+scripts/*
+# The production image build runs this preflight after copying the source.
+!scripts/check-analytics-build.sh
 *.log
 .DS_Store
