@@ -3,6 +3,7 @@ import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { source } from "@/lib/source";
 import { baseOptions } from "@/lib/layout.shared";
 import type { Metadata } from "next";
+import { AnalyticsLinks } from "@/components/AnalyticsLinks";
 import { SITE } from "@/lib/site";
 import "./global.css";
 import "./brand.css";
@@ -15,6 +16,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="paper-texture flex flex-col min-h-screen">
+        <AnalyticsLinks />
         <RootProvider theme={{ enabled: false, defaultTheme: "light" }}>
           <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
             {children}
