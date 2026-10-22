@@ -32,7 +32,7 @@
     "fumadocs-mdx": "14.3.2",
     "fumadocs-ui": "16.8.5",
     "lucide-react": "^1.11.0",
-    "next": "16.2.4",
+    "next": "16.4.2",
     "posthog-js": "1.425.1",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -46,18 +46,18 @@
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitest/ui": "^4.1.5",
+    "@vitest/ui": "^4.1.12",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "cspell": "^10.0.0",
     "eslint": "^10.2.1",
-    "eslint-config-next": "16.2.4",
+    "eslint-config-next": "16.4.2",
     "glob": "^13.0.6",
     "happy-dom": "^20.9.0",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.31",
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.12"
   }
 }
