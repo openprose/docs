@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import { afterEach, describe, expect, it } from "vitest";
 import { checkSurface } from "../scripts/check-http-surface";
 
@@ -43,18 +43,20 @@ async function fixture(mode: "public" | "preview" = "public", override?: Overrid
       reply = { status: 200, type: "application/json", body: '{"openapi":"3.1.0","paths":{"/api/search":{"get":{}}}}' };
     } else if (path === "/og/setup/image.png") {
       reply = { status: 200, type: "image/png", body: "image" };
-    } else if (path === "/openprose/contracts") {
-      reply = { status: 308, location: "/contracts" + url.search };
-    } else if (path === "/openprose/contracts.mdx") {
-      reply = { status: 308, location: "/contracts.mdx" + url.search };
-    } else if (path === "/start/what-is-openprose" || path === "/openprose") {
-      reply = { status: 308, location: "/" + url.search };
-    } else if (path === "/cli") {
-      reply = { status: 307, location: "https://github.com/openprose/prose/tree/main/packages/reactor-cli" + url.search };
+    } else if (request.url === "/openprose/contracts?source=release-check&value=a%2Fb") {
+      reply = { status: 308, location: "/contracts?source=release-check&value=a%2Fb" };
+    } else if (request.url === "/openprose/contracts.mdx?source=release-check&value=a%2Fb") {
+      reply = { status: 308, location: "/contracts.mdx?source=release-check&value=a%2Fb" };
+    } else if (request.url === "/start/what-is-openprose?source=release-check&value=a%2Fb" || request.url === "/openprose?source=release-check&value=a%2Fb") {
+      reply = { status: 308, location: "/?source=release-check&value=a%2Fb" };
+    } else if (request.url === "/cli?source=release-check&value=a%2Fb") {
+      reply = { status: 307, location: "https://github.com/openprose/prose/tree/main/packages/reactor-cli?source=release-check&value=a%2Fb" };
     }
     if (request.method === "POST" && ["/robots.txt", "/api/search"].includes(path)) reply = { status: 405 };
     if (request.headers.host === "docs.openprose.ai") {
-      reply = { status: 301, location: "https://docs.prose.md" + request.url };
+      reply = request.url === "/setup?source=release-check&value=a%2Fb"
+        ? { status: 301, location: "https://docs.prose.md/setup?source=release-check&value=a%2Fb" }
+        : { status: 404 };
     }
     reply = override?.(request) ?? reply;
     response.statusCode = reply.status;
@@ -63,14 +65,39 @@ async function fixture(mode: "public" | "preview" = "public", override?: Overrid
     if (reply.vary) response.setHeader("Vary", reply.vary);
     response.end(request.method === "HEAD" ? undefined : reply.body);
   });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
   servers.push(server);
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing fixture address");
   return `http://127.0.0.1:${address.port}`;
 }
 
 describe("HTTP release checks", () => {
+  it.each([
+    ["@127.0.0.1:4321/private", "docs.openprose.ai"],
+    ["http://127.0.0.1:4321/private", "docs.openprose.ai"],
+    ["//127.0.0.1:4321/private", "docs.openprose.ai"],
+    ["/setup?unexpected=destination", "docs.openprose.ai"],
+    ["/openprose/contracts?unexpected=destination", "fixture.test"],
+    ["/cli?unexpected=destination", "fixture.test"],
+  ])("does not redirect unsupported fixture target %s", async (path, host) => {
+    const base = await fixture();
+    const result = await new Promise<{ status: number; location?: string }>((resolve, reject) => {
+      const req = httpRequest(base, { path, headers: { Host: host }, signal: AbortSignal.timeout(2_000) }, (response) => {
+        response.resume();
+        response.on("end", () => resolve({ status: response.statusCode!, location: response.headers.location }));
+        response.on("error", reject);
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(result.location).toBeUndefined();
+    expect(result.status).toBeGreaterThanOrEqual(400);
+  });
+
   it.each(["public", "preview"] as const)("accepts the complete %s surface", async (mode) => {
     const results = await checkSurface(await fixture(mode), { mode, legacyHost: "docs.openprose.ai" });
     expect(results.length).toBeGreaterThan(30);
