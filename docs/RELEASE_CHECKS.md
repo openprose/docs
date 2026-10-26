@@ -4,6 +4,10 @@ The HTTP checker validates the externally visible docs routes. The browser
 experiment checks whether readers remain functional when requests reach two
 different standalone builds during a release or rollback.
 
+The browser experiment is an opt-in diagnostic, separate from required CI
+checks. Its failing assertions remain visible as evidence of the limitations
+described below.
+
 ## Run locally
 
 Use Node 22, pnpm 10.34.5 and a running Docker engine with Linux/amd64 support:
@@ -66,8 +70,8 @@ This reproduces a limitation of storing each build's assets only inside that
 build's container. Next.js documents that the `dpl` query parameter does not route
 requests to the matching deployment: see
 [deploymentId](https://nextjs.org/docs/app/api-reference/config/next-config-js/deploymentId).
-Release safety requires retained assets or routing that can continue serving the
-referenced version. Keep the failing assertions until that behavior is provided.
+The diagnostic does not implement asset retention or version-aware routing.
+Its assertions continue to report missing assets when that sequence is forced.
 
 The proxy forces a specific routing sequence. Production failure frequency,
 load-balancer draining, task recovery time and resource sizing remain unmeasured.
