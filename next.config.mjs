@@ -5,6 +5,7 @@ const withMDX = createMDX();
 /** @type {import('next').NextConfig} */
 const config = {
   output: "standalone",
+  deploymentId: process.env.DOCS_DEPLOYMENT_ID || undefined,
   reactStrictMode: true,
   async redirects() {
     const PROSE_REPO = "https://github.com/openprose/prose";
