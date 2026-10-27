@@ -1,92 +1,85 @@
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { mkdtemp, readFile, writeFile, mkdir, rm } from 'node:fs/promises';
+import { promisify, isDeepStrictEqual } from 'node:util';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
-import { object, referenceSchema, evidenceSchema, receiptSchema, checkSchema, validateSchema, requireCondition, validateCandidate, validateRegistrationCandidate, renderTask } from './contract.mjs';
-import { verifyDeployment, canRestorePrevious } from './ecs.mjs';
-import { failureDetails } from './failure.mjs';
-import { formatReleaseNotification } from './notify.mjs';
-const exec = promisify(execFile);
-const nonempty = { type: 'string', minLength: 1 };
-const runId = { type: 'string', pattern: '^[1-9][0-9]*$' };
-const evidenceProperties = { ...evidenceSchema.properties };
-for (const key of ['approvedContract', 'actualContract', 'stagingReceipt', 'manifestReference'])
-  delete evidenceProperties[key];
-const configSchema = object({
-  bucket: { type: 'string', pattern: '^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$' },
-  manifest: referenceSchema,
-  contract: referenceSchema,
-  evidence: object(evidenceProperties),
-  release: object({ runId, runAttempt: runId }),
-  alertsTopicArn: { type: 'string', pattern: '^arn:aws:sns:us-east-1:[0-9]{12}:[A-Za-z0-9_-]+$' },
-  probeConnectHost: {
-    type: 'string',
-    pattern: '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.us-east-1\\.elb\\.amazonaws\\.com$'
-  },
-  concurrencyGroup: nonempty,
-  stagingReceipt: referenceSchema,
-  rollbackReceipt: referenceSchema,
-  previousReceipt: referenceSchema,
-  observedTaskArn: nonempty,
-  registerOnly: { type: 'boolean' },
-  verifyOnly: { type: 'boolean' },
-  timeoutSeconds: { type: 'integer', minimum: 1, maximum: 1800 },
-  pollIntervalMs: { type: 'integer', minimum: 1, maximum: 30000 }
-}, ['observedTaskArn', 'previousReceipt', 'alertsTopicArn', 'stagingReceipt', 'rollbackReceipt', 'verifyOnly', 'registerOnly', 'timeoutSeconds', 'pollIntervalMs']);
-export function validateConfig(config) {
-  validateSchema(configSchema, config, 'trusted configuration');
-  const { evidence: e } = config;
-  requireCondition(!(config.registerOnly && config.verifyOnly), 'Conflicting bootstrap modes');
-  if (e.environment === 'production' && !config.registerOnly)
-    requireCondition(config.alertsTopicArn, 'Production alerts topic required');
-  requireCondition(config.concurrencyGroup === `docs-${e.environment}`, 'Wrong environment concurrency group');
-  requireCondition(config.contract.key === `contracts/${e.environment}/current.json`, 'Wrong contract key');
-  requireCondition(config.manifest.key === `builds/${e.producer.runId}/${e.producer.runAttempt}/manifest.json`, 'Wrong manifest key');
-  if (config.stagingReceipt)
-    requireCondition(/^receipts\/staging\/[1-9][0-9]*\/[1-9][0-9]*\.json$/.test(config.stagingReceipt.key), 'Wrong staging receipt key');
-  if (config.previousReceipt)
-    requireCondition(new RegExp(`^receipts/${e.environment}/[1-9][0-9]*/[1-9][0-9]*\\.json$`).test(config.previousReceipt.key), 'Wrong previous receipt key');
-  if (config.rollbackReceipt)
-    requireCondition(new RegExp(`^receipts/${e.environment}/[1-9][0-9]*/[1-9][0-9]*\\.json$`).test(config.rollbackReceipt.key), 'Wrong rollback receipt key');
-  return config;
+import {
+  validateConfig,
+  receiptSchema,
+  checkSchema,
+  validateSchema,
+  requireCondition,
+  validateCandidate,
+  validateRegistrationCandidate,
+  renderTask,
+  validateContract,
+  createAws,
+  createGithub,
+  buildEvidence,
+  trustedReleaseRun,
+  requireFresh,
+  pinObject,
+  readObject
+} from './artifacts.mjs';
+// Only fixed codes enter diagnostics; exception text and operational values stay out.
+const reasons = new Map([
+  ['Deployment deadline exceeded', 'deadline_exceeded'],
+  ['Rollout failed or replaced', 'rollout_failed_or_replaced'],
+  ['Service changed before update', 'service_replaced'],
+  ['Service changed during probes', 'service_replaced'],
+  ['Restored task differs from contract', 'template_incompatible'],
+  ['Unexpected restored container setting', 'template_incompatible'],
+  ['Unexpected restored task setting', 'template_incompatible'],
+  ['Unsafe restoration refused', 'restoration_refused'],
+  ['HTTP probes failed', 'http_failed'],
+  ['Recovery HTTP probes failed', 'http_failed'],
+  ['AWS command failed', 'aws_command_failed'],
+  ['Object reference mismatch', 'object_reference_mismatch'],
+  ['Current contract differs from approval', 'contract_replaced'],
+  ['Current verified receipt unavailable; provide exact previous run/attempt', 'current_proof_unavailable'],
+  ['Current approved staging proof unavailable', 'staging_proof_unavailable'],
+  ['Retained rollback proof unavailable', 'target_proof_unavailable'],
+  ['Stale or divergent candidate', 'stale_candidate']
+]);
+const stages = new Set(['validation', 'current_revision', 'registration', 'update', 'rollout', 'http', 'final_observation', 'recovery', 'preparation', 'runner']);
+export function failureDetails(stage, error) {
+  return `stage=${stages.has(stage) ? stage : 'runner'};reason=${reasons.get(error?.message) ?? 'rejected_or_unavailable'}`;
 }
-export function createAws({ run = exec } = {}) {
-  return async (args) => {
-    try {
-      const { stdout } = await run('aws', [...args.slice(0, 2), '--region', 'us-east-1', '--output', 'json', '--no-cli-pager', ...args.slice(2)], {
-        timeout: 30000,
-        maxBuffer: 8 * 1024 * 1024,
-        env: { ...process.env, AWS_PAGER: '', AWS_CLI_AUTO_PROMPT: 'off' }
-      });
-      return stdout.trim() ? JSON.parse(stdout) : {};
-    }
-    catch {
-      throw new Error('AWS command failed');
+
+export function verifyDeployment(expected, observed) {
+  return [
+    { name: 'primary revision', ok: observed.primaryTaskArn === expected.taskArn },
+    { name: 'rollout completed', ok: observed.rolloutState === 'COMPLETED' },
+    {
+      name: 'task counts',
+      ok: expected.desiredCount === 1 && observed.desired === 1 && observed.running === 1 && observed.pending === 0 && observed.tasks.length === 1
+    },
+    {
+      name: 'running revision and digest',
+      ok: observed.tasks.length > 0 && observed.tasks.every(t => t.taskDefinitionArn === expected.taskArn && t.imageDigest === expected.digest)
+    },
+  ];
+}
+
+export function canRestorePrevious(attempt, current) {
+  return typeof attempt.previousTaskArn === 'string' && attempt.previousTaskArn !== attempt.requestedTaskArn && current.primaryTaskArn === attempt.requestedTaskArn;
+}
+
+export function formatReleaseNotification(receipt) {
+  validateSchema(receiptSchema, receipt, 'receipt');
+  return {
+    version: '1.0',
+    source: 'custom',
+    content: {
+      textType: 'client-markdown',
+      title: `Docs ${receipt.environment} release`,
+      description: `Release ${receipt.sourceSha.slice(0, 12)}: ${receipt.result}. ${receipt.checks.filter(c => !c.ok).length} checks require attention.`
     }
   };
 }
-async function readObject(aws, bucket, ref, pinned = true) {
-  const dir = await mkdtemp(join(tmpdir(), 'docs-release-object-'));
-  try {
-    const file = join(dir, 'object.json');
-    const response = await aws(['s3api', 'get-object', '--bucket', bucket, '--key', ref.key, ...(pinned ? ['--version-id', ref.versionId] : []), file]);
-    const bytes = await readFile(file);
-    const actual = {
-      key: ref.key,
-      versionId: response.VersionId,
-      sha256: createHash('sha256').update(bytes).digest('hex')
-    };
-    requireCondition(isDeepStrictEqual(actual, ref), 'Object reference mismatch');
-    return JSON.parse(bytes.toString('utf8'));
-  }
-  finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
+
+const exec = promisify(execFile);
 export async function loadCandidate(config, { aws = createAws() } = {}) {
   validateConfig(config);
   const contract = await readObject(aws, config.bucket, config.contract);
@@ -102,6 +95,7 @@ export async function loadCandidate(config, { aws = createAws() } = {}) {
   const candidate = (config.registerOnly ? validateRegistrationCandidate : validateCandidate)(manifest, contract, evidence);
   return { contract, manifest, candidate };
 }
+
 async function observe(aws, contract) {
   const response = await aws(['ecs', 'describe-services', '--cluster', contract.clusterArn, '--services', contract.serviceArn]);
   requireCondition(!response.failures?.length && response.services?.length === 1, 'Service observation unavailable');
@@ -128,10 +122,12 @@ async function observe(aws, contract) {
     tasks
   };
 }
+
 function ownTask(contract, arn) {
   const prefix = contract.clusterArn.split(':cluster/')[0];
   requireCondition(new RegExp(`^${prefix}:task-definition/${contract.taskFamily}:[1-9][0-9]*$`).test(arn), 'Wrong task definition identity');
 }
+
 async function taskDigest(aws, contract, arn, requireCompatible = true) {
   ownTask(contract, arn);
   const { taskDefinition: task } = await aws(['ecs', 'describe-task-definition', '--task-definition', arn]);
@@ -166,6 +162,7 @@ async function taskDigest(aws, contract, arn, requireCompatible = true) {
       requireCondition(emptyDefaults.has(key) && Array.isArray(task[key]) && task[key].length === 0 || key === 'enableFaultInjection' && task[key] === false, 'Unexpected restored task setting');
   return digest;
 }
+
 async function probeSurface(contract, connectHost) {
   const root = fileURLToPath(new URL('../../', import.meta.url));
   try {
@@ -182,6 +179,7 @@ async function probeSurface(contract, connectHost) {
     throw new Error('HTTP probes unavailable');
   }
 }
+
 export async function runRelease(command, config, { aws = createAws(), outputDir, probe = probeSurface, now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms)) } = {}) {
   requireCondition(['deploy', 'rollback'].includes(command), 'Unknown release command');
   validateConfig(config);
@@ -377,9 +375,133 @@ export async function runRelease(command, config, { aws = createAws(), outputDir
     registeredOnly
   };
 }
-export async function notifyReceipt(config, receipt, { aws = createAws() } = {}) {
-  const { contract } = await loadCandidate(config, { aws });
-  validateSchema(receiptSchema, receipt, 'receipt');
-  requireCondition(receipt.environment === contract.environment && isDeepStrictEqual(receipt.contract, config.contract) && isDeepStrictEqual(receipt.manifest, config.manifest), 'Notification receipt mismatch');
-  await aws(['sns', 'publish', '--topic-arn', contract.releaseTopicArn, '--message', JSON.stringify(formatReleaseNotification(receipt))]);
+
+function verified(receipt, environment) {
+  try { validateSchema(receiptSchema, receipt, 'receipt'); } catch { return false; }
+  return receipt.environment === environment && receipt.result === 'verified' && receipt.checks.length > 0 && receipt.checks.every(c => c.ok) && receipt.requestedTaskArn !== null && receipt.requestedTaskArn === receipt.observedTaskArn;
+}
+
+export function matchesStaging(receipt, manifest, ref, contractRef) {
+  return verified(receipt, 'staging') && isDeepStrictEqual(receipt.contract, contractRef) && isDeepStrictEqual(receipt.manifest, ref) && receipt.sourceSha === manifest.sourceSha && receipt.observedImageDigest === manifest.images.staging.digest;
+}
+
+async function approvedContract(aws, config, environment) {
+  const approved = config.contracts[environment];
+  requireCondition(approved?.key === `contracts/${environment}/current.json`, 'Approved contract required');
+  const object = await pinObject(aws, config.bucket, approved.key);
+  requireCondition(isDeepStrictEqual(object.ref, approved), 'Current contract differs from approval');
+  validateContract(object.value);
+  requireCondition(object.value.environment === environment, 'Wrong approved environment');
+  return object;
+}
+
+async function receiptRecords(github, aws, config, environment, explicit) {
+  let runs;
+  if (explicit) {
+    requireCondition(/^[1-9][0-9]*\/[1-9][0-9]*$/.test(explicit), 'Expected release run/attempt');
+    const [id, attempt] = explicit.split('/');
+    runs = [await github(`actions/runs/${id}/attempts/${attempt}`)];
+    requireCondition(String(runs[0].id) === id && String(runs[0].run_attempt) === attempt, 'Receipt run identity mismatch');
+  } else {
+    runs = (await github('actions/workflows/release-docs.yml/runs?branch=main&status=success&per_page=20')).workflow_runs;
+  }
+  const records = [];
+  for (const run of runs) {
+    if (!trustedReleaseRun(run, environment)) {
+      requireCondition(!explicit, 'Untrusted receipt producer');
+      continue;
+    }
+    try {
+      const record = await pinObject(aws, config.bucket, `receipts/${environment}/${run.id}/${run.run_attempt}.json`);
+      if (verified(record.value, environment)) records.push(record);
+    } catch { requireCondition(!explicit, 'Explicit receipt unavailable'); }
+  }
+  return records;
+}
+
+export async function prepareRelease({ config, environment, operation, producerRun, producerAttempt, release, previousRun = '', stagingRun = '', rollbackRun = '' }, { github = createGithub(), aws = createAws() } = {}) {
+  requireCondition(['staging', 'production'].includes(environment) && ['promote', 'rollback', 'register', 'verify'].includes(operation), 'Invalid release operation');
+  const evidence = await buildEvidence(github, producerRun, producerAttempt);
+  const contract = await approvedContract(aws, config, environment);
+  const manifest = await pinObject(aws, config.bucket, `builds/${producerRun}/${producerAttempt}/manifest.json`);
+  const input = {
+    bucket: config.bucket,
+    contract: contract.ref,
+    manifest: manifest.ref,
+    evidence: { ...evidence, environment, repositoryUrl: contract.value.repositoryUrl },
+    release,
+    probeConnectHost: config.probeConnectHost,
+    concurrencyGroup: `docs-${environment}`,
+    ...(environment === 'production' && operation !== 'register' ? { alertsTopicArn: config.alertsTopicArn } : {}),
+    ...(operation === 'register' ? { registerOnly: true } : {}),
+    ...(operation === 'verify' ? { verifyOnly: true } : {})
+  };
+  if (environment === 'production' && operation !== 'register') {
+    const stagingContract = await approvedContract(aws, config, 'staging');
+    const records = await receiptRecords(github, aws, config, 'staging', stagingRun);
+    const proof = records.find(r => matchesStaging(r.value, manifest.value, manifest.ref, stagingContract.ref));
+    requireCondition(proof, 'Current approved staging proof unavailable');
+    input.stagingReceipt = proof.ref;
+  }
+  // Validate the candidate before observing or selecting any service evidence.
+  await loadCandidate(input, { aws });
+  if (operation === 'promote' || operation === 'rollback') {
+    const response = await aws(['ecs', 'describe-services', '--cluster', contract.value.clusterArn, '--services', contract.value.serviceArn]);
+    requireCondition(!response.failures?.length && response.services?.length === 1 && response.services[0].serviceArn === contract.value.serviceArn, 'Current service unavailable');
+    const taskArn = response.services[0].taskDefinition;
+    const task = await aws(['ecs', 'describe-task-definition', '--task-definition', taskArn]);
+    const image = task.taskDefinition?.containerDefinitions?.[0]?.image;
+    requireCondition(task.taskDefinition?.taskDefinitionArn === taskArn && typeof image === 'string' && image.startsWith(`${contract.value.repositoryUrl}@`), 'Current image unavailable');
+    const digest = image.slice(contract.value.repositoryUrl.length + 1);
+    if (operation === 'promote') {
+      const records = await receiptRecords(github, aws, config, environment, previousRun);
+      const previous = records.find(r => r.value.observedTaskArn === taskArn && r.value.observedImageDigest === digest);
+      requireCondition(previous, 'Current verified receipt unavailable; provide exact previous run/attempt');
+      input.previousReceipt = previous.ref;
+      await requireFresh(operation, previous.value.sourceSha, evidence.sourceSha, github);
+    } else {
+      // Recovery may replace an unverified revision; retain the exact observed pointer.
+      input.observedTaskArn = taskArn;
+    }
+    if (operation === 'rollback') {
+      requireCondition(rollbackRun, 'Explicit retained rollback receipt required');
+      const targets = await receiptRecords(github, aws, config, environment, rollbackRun);
+      const target = targets.find(r => isDeepStrictEqual(r.value.manifest, manifest.ref) && r.value.sourceSha === evidence.sourceSha && r.value.observedImageDigest === manifest.value.images[environment].digest);
+      requireCondition(target, 'Retained rollback proof unavailable');
+      input.rollbackReceipt = target.ref;
+    }
+  }
+  return input;
+}
+
+export async function executeRelease(options, dependencies = {}) {
+  const input = await prepareRelease(options, dependencies);
+  const outputDir = join(process.env.RUNNER_TEMP ?? tmpdir(), 'docs-private');
+  await mkdir(outputDir, { recursive: true, mode: 0o700 });
+  await writeFile(join(outputDir, 'trusted.json'), JSON.stringify(input), { mode: 0o600 });
+  return runRelease(options.operation === 'rollback' ? 'rollback' : 'deploy', input, { ...dependencies, outputDir });
+}
+
+// Validate dispatch policy before reading evidence or acquiring mutation dependencies.
+export function selectRelease({ eventName, ref, enabled, inputs = {}, workflowRun }) {
+  requireCondition(ref === 'refs/heads/main', 'Trusted main required');
+  let environment, operation, producerRun, producerAttempt;
+  if (eventName === 'workflow_run') {
+    if (enabled !== 'true' || workflowRun?.conclusion !== 'success' || workflowRun.event !== 'push' || workflowRun.head_branch !== 'main' || workflowRun.head_repository?.full_name !== 'openprose/docs') return null;
+    environment = 'staging';
+    operation = 'promote';
+    producerRun = String(workflowRun.id);
+    producerAttempt = String(workflowRun.run_attempt);
+  } else {
+    requireCondition(eventName === 'workflow_dispatch', 'Invalid release event');
+    ({ environment, operation, producer_run: producerRun, producer_attempt: producerAttempt } = inputs);
+    requireCondition(['staging', 'production'].includes(environment) && ['promote', 'rollback', 'register', 'verify'].includes(operation), 'Invalid release operation');
+    requireCondition(operation !== 'promote' || environment === 'production', 'Manual promotion requires production');
+    requireCondition(enabled === 'true' || ['register', 'verify'].includes(operation), 'Regular delivery disabled');
+  }
+  requireCondition(/^[1-9][0-9]*$/.test(producerRun ?? '') && /^[1-9][0-9]*$/.test(producerAttempt ?? ''), 'Invalid producer identifiers');
+  const { previous_run: previousRun = '', staging_run: stagingRun = '', rollback_run: rollbackRun = '' } = inputs;
+  for (const value of [previousRun, stagingRun, rollbackRun]) requireCondition(value === '' || /^[1-9][0-9]*\/[1-9][0-9]*$/.test(value), 'Expected release run/attempt');
+  requireCondition(operation !== 'rollback' || rollbackRun, 'Explicit retained rollback receipt required');
+  return { environment, operation, producerRun, producerAttempt, previousRun, stagingRun, rollbackRun };
 }

@@ -1,8 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { hash, pinObject } from './integration.mjs';
-import { validateContract, requireCondition } from './contract.mjs';
-import { buildEvidence } from './github.mjs';
-export async function smokeContainer(run, tag, mode) {
+import { hash, pinObject, validateContract, requireCondition, buildEvidence } from './artifacts.mjs';
+async function smokeContainer(run, tag, mode) {
   const { stdout } = await run('docker', ['run', '--detach', '--platform', 'linux/amd64', '--publish', '127.0.0.1::3000', tag]);
   const id = stdout.trim();
   try {
@@ -20,6 +18,7 @@ export async function smokeContainer(run, tag, mode) {
     requireCondition(checks.length > 0 && checks.every(c => c.ok), 'Container HTTP smoke failed');
   } finally { await run('docker', ['rm', '--force', id]); }
 }
+
 export async function buildImages({ run, smoke = smokeContainer, productionRepository, stagingRepository, sourceSha, runId, runAttempt }) {
   const images = {};
   for (const [environment, repository, mode] of [['production', productionRepository, 'public'], ['staging', stagingRepository, 'preview']]) {
@@ -42,6 +41,7 @@ export async function buildImages({ run, smoke = smokeContainer, productionRepos
   }
   return images;
 }
+
 export async function publishBuild({ config, aws, github, run }) {
   const evidence = await buildEvidence(github, process.env.GITHUB_RUN_ID, process.env.GITHUB_RUN_ATTEMPT, true);
   requireCondition(evidence.sourceSha === process.env.GITHUB_SHA, 'Checkout source mismatch');

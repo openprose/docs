@@ -1,38 +1,55 @@
-name: Release retained Docs image
+name: Release Docs
+run-name: ${{ github.event_name == 'workflow_run' && 'Stage Docs candidate' || format('Docs {0} {1}', inputs.operation, inputs.environment) }}
 on:
-  workflow_call:
+  workflow_run:
+    workflows: [Build retained Docs images]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
     inputs:
-      environment:
-        required: true
-        type: string
       operation:
+        type: choice
+        options: [promote, rollback, register, verify]
         required: true
-        type: string
+      environment:
+        type: choice
+        options: [staging, production]
+        default: production
+        required: true
       producer_run:
+        description: Successful retained build run ID
         required: true
         type: string
       producer_attempt:
+        description: Successful retained build attempt
         required: true
         type: string
       previous_run:
-        default: ''
+        description: Optional exact current verified release run/attempt
         type: string
       staging_run:
-        default: ''
+        description: Optional exact staging proof run/attempt
         type: string
       rollback_run:
-        default: ''
+        description: Verified retained target run/attempt (required for rollback)
         type: string
 permissions:
   contents: read
 jobs:
   release:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'workflow_run' && vars.DOCS_AWS_ENABLED == 'true' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == 'openprose/docs') ||
+       (github.event_name == 'workflow_dispatch' &&
+        (vars.DOCS_AWS_ENABLED == 'true' || inputs.operation == 'register' || inputs.operation == 'verify')))
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    environment: docs-${{ inputs.environment }}
+    environment: docs-${{ github.event_name == 'workflow_run' && 'staging' || inputs.environment }}
     concurrency:
-      group: docs-${{ inputs.environment }}
+      group: docs-${{ github.event_name == 'workflow_run' && 'staging' || inputs.environment }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -43,13 +60,7 @@ jobs:
       DOCS_ROLE_ID: ${{ secrets.DOCS_ROLE_ID }}
       DOCS_ROLE_ARN: ${{ secrets.DOCS_RELEASE_ROLE_ARN }}
       GH_TOKEN: ${{ github.token }}
-      RELEASE_ENVIRONMENT: ${{ inputs.environment }}
-      RELEASE_OPERATION: ${{ inputs.operation }}
-      PRODUCER_RUN: ${{ inputs.producer_run }}
-      PRODUCER_ATTEMPT: ${{ inputs.producer_attempt }}
-      PREVIOUS_RUN: ${{ inputs.previous_run }}
-      STAGING_RUN: ${{ inputs.staging_run }}
-      ROLLBACK_RUN: ${{ inputs.rollback_run }}
+      DOCS_AWS_ENABLED: ${{ vars.DOCS_AWS_ENABLED }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

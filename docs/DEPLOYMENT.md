@@ -1,130 +1,6 @@
 # Deployment
 
-## Validated release controller
-
-The controller uses Node, the installed AWS CLI, and the installed `tsx` HTTP
-checker. Run it only from a trusted main workflow with authenticated GitHub
-run/check evidence and protected environment configuration. Candidate JSON cannot
-authorize its own producer, source, checks, contract, routing, or destination.
-
-```sh
-node scripts/release/cli.mjs validate --input trusted.json
-node scripts/release/cli.mjs render --input trusted.json --output task.json
-node scripts/release/cli.mjs deploy --input trusted.json --output private-evidence
-node scripts/release/cli.mjs rollback --input trusted.json --output private-evidence
-node scripts/release/cli.mjs notify --input trusted.json --receipt private-evidence/receipt.json
-```
-
-`validate` downloads and validates exact versioned objects; it does not certify
-application health. `render` writes a private task definition. `deploy` registers
-that definition, changes only the service task pointer, verifies the primary and
-running revision/digest/count, then checks the HTTP surface. `rollback` requires
-pinned evidence for a previously verified retained image and registers that image
-with the **current** contract template. It uses the same validation and checks.
-`notify` retries a deployment summary without changing application state.
-
-The trusted input rejects unknown fields. Its required fields are:
-
-| Field | Value |
-| --- | --- |
-| `bucket` | Private versioned evidence bucket, from protected configuration |
-| `contract` | `{key, versionId, sha256}` for `contracts/<environment>/current.json` |
-| `manifest` | `{key, versionId, sha256}` for `builds/<producer-run>/<producer-attempt>/manifest.json` |
-| `evidence` | `{environment, repositoryUrl, sourceSha, producer, checks}` from authenticated reads |
-| `evidence.producer` | `{repository, workflowRef, runId, runAttempt}`; IDs are decimal strings and workflow ref ends in `@refs/heads/main` |
-| `evidence.checks` | `{runId, conclusion: "success"}` for independently authenticated source checks |
-| `release` | `{runId, runAttempt}` of the **current release workflow**, as decimal strings |
-| `probeConnectHost` | ALB DNS name from approved infrastructure output; exactly `*.us-east-1.elb.amazonaws.com`, without URL, port, credentials or IP literal |
-| `concurrencyGroup` | `docs-staging` or `docs-production`, matching the workflow's actual environment lock |
-
-Verify repository identity, trusted build workflow identity, main branch, source
-SHA, run attempt and successful completion through authenticated GitHub reads.
-Verify the source-check workflow/run against that exact SHA separately. Supply
-these independently obtained values in `evidence`; do not copy them from an
-untrusted manifest. Obtain exact S3 object versions and SHA-256 hashes from
-approved outputs and authenticated reads. Hashes refer to the original bytes.
-The controller does not perform GitHub authentication itself.
-
-Additional trusted fields, required for the operations indicated:
-
-- `previousReceipt`: exact `{key, versionId, sha256}` for the current service's
-  last verified receipt. Required before ordinary promotion. It must identify
-  the observed revision and digest with successful checks. Historical contract
-  references are accepted as evidence; compatibility is checked before automatic
-  recovery from a failed promotion.
-- `observedTaskArn`: actual active task-definition ARN from an authenticated
-  service read, required by `rollback`. The controller rechecks this pointer
-  before updating the service; the starting revision need not be healthy or
-  have a verified receipt. Rollback does not consume `previousReceipt`.
-- `stagingReceipt`: exact reference under `receipts/staging/<run>/<attempt>.json`.
-  Required for production deployment and verification; it must verify the exact
-  manifest version/hash, source SHA and staging digest.
-- `rollbackReceipt`: exact reference under the target environment's receipt
-  prefix, required by `rollback`. It must verify the selected manifest and image.
-- `alertsTopicArn`: approved production recovery-alerts topic, required for
-  production except registration-only bootstrap. The deployments topic comes
-  from the validated contract.
-- `timeoutSeconds`: ECS verification deadline, 1–1800, default 600.
-- `pollIntervalMs`: polling delay, 1–30000, default 5000.
-- `registerOnly: true`: explicit bootstrap registration; creates no service update
-  and requires no deployed staging proof. Its private record has
-  `schemaVersion: 1, kind: "registration"`, environment, manifest/contract refs,
-  source SHA, requested task ARN, checks and timestamp. It has no deployment
-  `result` or observed revision, and is rejected as deployment evidence.
-- `verifyOnly: true`: `deploy` observes an already activated bootstrap revision,
-  confirms its full current template and candidate image, and runs ECS/HTTP
-  checks without registration or service update. It creates the first verified
-  receipt and requires no `previousReceipt`. It cannot combine with
-  `registerOnly` or be used with `rollback`. Verify staging before production.
-
-The ALB target changes DNS lookup only. HTTP Host, TLS server name, certificate
-verification and the contract probe URL remain intact, including before public
-DNS changes. Never substitute a candidate-provided origin or disable TLS checks.
-Staging uses preview checks; production uses public checks.
-
-All deployment, rollback and verification jobs must share the same environment
-concurrency group with cancellation disabled. Pause releases during any apply
-that changes contracts. The controller re-fetches the current contract's version
-and hash immediately before each ECS mutation and after verification. AWS offers
-no compare-and-swap for this service update: the workflow lock and coordinated
-pause are required to close the remaining check/update race.
-
-A failed promotion always exits nonzero, including after successful recovery.
-Automatic recovery applies to promotion and can restore only this attempt's
-service revision, without an intervening update, and only if the previously
-verified task is compatible with the current template. Recovery requires both
-ECS and HTTP checks. Otherwise it
-fails and requests operator attention; production failures also use the approved
-alerts topic. An incompatible historical task must be recovered through an
-explicit rollback using the current template. A failed explicit rollback does
-not automatically restore its starting revision.
-
-Private receipts are written once to
-`receipts/<environment>/<current-release-run>/<current-release-attempt>.json`
-using a conditional S3 write. They retain failure and recovery checks and honest
-nullable observation fields. Delivery failures do not rewrite application
-health, but fail CI. Keep `private-evidence/receipt.json` as a private artifact
-when S3 persistence fails. A fresh verification run can establish a new receipt
-after delivery is repaired. Keep task definitions and evidence private; console
-output intentionally omits infrastructure identifiers and raw AWS errors.
-
-Select previous receipts through authenticated release-run records or explicit
-operator-supplied references and exact S3 reads. The controller neither lists S3
-nor maintains a mutable current-release pointer. Bootstrap registration and
-subsequent verification use different workflow runs/attempts so their immutable
-keys cannot collide.
-
-The reusable interface exports `loadCandidate`, `runRelease`, `notifyReceipt`
-and `createAws` from `scripts/release/controller.mjs`, pure contract helpers from
-`contract.mjs`, ECS checks from `ecs.mjs`, and custom AWS notification formatting
-from `notify.mjs`. `runRelease(command, input, {outputDir})` returns
-`{exitCode, receipt, registration, registeredOnly}`; registration-only returns a
-null receipt. Dependency injection permits offline AWS response fixtures.
-
-Run controller checks with `node --test scripts/release/*.test.mjs` and the HTTP
-fixture tests with `pnpm exec vitest run __tests__/http-surface.test.ts`.
-
-## Workflow setup and enablement
+## Setup and configuration
 
 Pull requests retain the required `verify` check, including the informational
 production dependency audit, source checks, release tests, and standalone HTTP
@@ -207,7 +83,7 @@ to establish new immutable evidence rather than relying on hosted-runner files.
 2. Dispatch **Build retained Docs images** on protected main. It reruns source
    checks and retains both tested images. Record its run ID and successful
    attempt. No service is updated.
-3. Dispatch **Bootstrap Docs service** on protected main with environment
+3. Dispatch **Release Docs** on protected main with environment
    `staging`, operation `register`, and that producer run/attempt. Repeat for
    `production`, obtaining the required production approval. Each run only
    registers an immutable task revision and saves a private registration result;
@@ -237,13 +113,14 @@ is the freshness authority, rather than workflow run ordering.
 
 ## Promotion and retained recovery
 
-**Stage Docs candidate** runs only after a successful trusted main **push**
+**Release Docs** automatically stages candidates only after a successful trusted main **push**
 producer and when automatic delivery is enabled. Manual build runs never auto-stage,
 so bootstrap cannot accidentally start a normal deployment before prior receipts
 exist. Its candidate-ready message requires ECS,
 digest and semantic HTTP checks to pass. A successful build alone is not ready.
 
-Dispatch **Promote Docs production** on protected main with the successful build
+Dispatch **Release Docs** on protected main with operation `promote`, environment
+`production`, and the successful build
 `producer_run` and `producer_attempt`. The protected production environment asks
 for human approval. After approval and lock acquisition, validation is repeated;
 no image is rebuilt. A candidate behind or divergent from the currently deployed
@@ -251,8 +128,8 @@ verified source is rejected, including an older queued candidate overtaken by a
 newer production release. Identical/ahead sources are eligible after all other
 checks pass.
 
-The integration discovers recent successful permitted release runs through the
-GitHub API (up to 20 per applicable workflow), derives only their permitted exact
+The release program discovers recent successful permitted release runs through the
+GitHub API (up to 20 from `release-docs.yml`), derives only their permitted exact
 receipt keys, and pins each returned version/hash. For forward promotion, the
 current receipt must match the actual healthy service revision and image. A
 bounded search that finds no matching
@@ -260,7 +137,7 @@ proof fails closed. `previous_run` and `staging_run` accept optional exact
 `run-id/attempt` references for retained evidence outside that window; they still
 require authenticated permitted main release runs and verified receipts.
 
-For deliberate rollback, dispatch **Rollback Docs retained image** on protected
+For deliberate rollback, dispatch **Release Docs** with operation `rollback` on protected
 main. Choose `production` (the default) or `staging`, supply the retained build
 `producer_run`/`producer_attempt`, and set required `rollback_run` to the verified
 target release's `run-id/attempt` in the selected environment. The target receipt
@@ -304,3 +181,37 @@ still resolves to Fly, the live robots check observes Fly. After the DNS switch,
 verify Fly separately through an approved direct target before any DNS recovery;
 the public-host robots check alone is not proof of Fly health. No workflow here
 changes DNS.
+
+## Diagnostics, retention and limits
+
+The release program uses Node, the installed AWS CLI and the installed `tsx`
+HTTP checker. Terraform owns every task-template field except the immutable image
+substituted by the workflow. Candidate JSON cannot authorize its own producer,
+source, checks, contract, routing or destination. Strict validation rejects unknown
+record fields. The program checks the current contract immediately before each
+mutation and after verification. Pause releases during contract changes; ECS
+service updates offer no atomic compare-and-swap.
+
+A failed promotion remains nonzero after successful automatic restoration.
+Restoration requires a compatible previously verified task and ownership of the
+active service pointer, followed by ECS and HTTP verification. Explicit rollback
+never automatically restores its failed starting revision. HTTP checks connect to
+the approved ALB while retaining the public Host, TLS server name and certificate
+verification. Running task revision, digest and counts are checked before and
+after HTTP probes, beyond ECS stability alone.
+
+Receipts use immutable conditional writes under
+`receipts/<environment>/<release-run>/<attempt>.json`. Registration-only records
+have `kind: "registration"` and cannot serve as deployment receipts. Notification,
+alert or receipt-delivery failures are independent nonzero outcomes; they never
+rewrite application health. Private files under the runner's `docs-private`
+directory retain bounded failure details and delivery-failure records, but hosted
+runner files are ephemeral. Repair delivery and run fresh verification to establish
+new immutable evidence. No mutable current-release pointer or S3 listing is used.
+
+Run local release checks with `node --test scripts/release/*.test.mjs` and HTTP
+fixtures with `pnpm exec vitest run __tests__/http-surface.test.ts`. These offline
+checks do not prove configured environment protection, OIDC trust, live rollout,
+HTTP routing or notification delivery. Actual retained-image smoke evidence applies
+only while image build behavior remains unchanged; hosted release proof requires
+an approved live run.

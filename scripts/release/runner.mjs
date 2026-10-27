@@ -1,12 +1,9 @@
 import { execFile } from 'node:child_process';
-import { mkdir, writeFile, appendFile } from 'node:fs/promises';
+import { mkdir, writeFile, appendFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { failureDetails } from './failure.mjs';
-import { createAws } from './controller.mjs';
-import { createGithub } from './github.mjs';
-import { executeRelease } from './integration.mjs';
-import { requireCondition } from './contract.mjs';
+import { failureDetails, executeRelease, selectRelease } from './release.mjs';
+import { createAws, createGithub, requireCondition } from './artifacts.mjs';
 import { publishBuild } from './build.mjs';
 const dir = join(process.env.RUNNER_TEMP ?? tmpdir(), 'docs-private');
 await mkdir(dir, { recursive: true, mode: 0o700 });
@@ -34,17 +31,31 @@ try {
     mask(process.env.DOCS_ROLE_ARN?.split(':')[4]);
     mask(process.env.DOCS_ROLE_ARN?.split('/').at(-1));
   } else {
+    requireCondition(['build', 'release'].includes(mode), 'Unknown workflow mode');
+    if (mode === 'release') stage = 'preparation';
+    const event = mode === 'release' ? JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8')) : {};
+    const selected = mode === 'release' ? selectRelease({
+      eventName: process.env.GITHUB_EVENT_NAME,
+      ref: process.env.GITHUB_REF,
+      enabled: process.env.DOCS_AWS_ENABLED,
+      inputs: event.inputs,
+      workflowRun: event.workflow_run
+    }) : null;
+    if (mode === 'release' && !selected) process.exit(0);
     const aws = createAws({ run });
     const github = createGithub();
     let source;
     if (mode === 'build') source = await publishBuild({ config, aws, github, run });
     else {
-      stage = 'preparation';
-      const result = await executeRelease({ config, environment: process.env.RELEASE_ENVIRONMENT, operation: process.env.RELEASE_OPERATION, producerRun: process.env.PRODUCER_RUN, producerAttempt: process.env.PRODUCER_ATTEMPT, release: { runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT }, previousRun: process.env.PREVIOUS_RUN, stagingRun: process.env.STAGING_RUN, rollbackRun: process.env.ROLLBACK_RUN }, { aws, github });
+      const result = await executeRelease({
+        config,
+        ...selected,
+        release: { runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT }
+      }, { aws, github });
       process.exitCode = result.exitCode;
       source = result.receipt?.sourceSha ?? result.registration?.sourceSha;
       if (result.exitCode === 0 && result.registeredOnly) console.log('Initial task registered; operator activation and verification pending.');
-      else if (result.exitCode === 0 && process.env.RELEASE_ENVIRONMENT === 'staging') console.log('Candidate ready: staging ECS, digest and HTTP checks passed.');
+      else if (result.exitCode === 0 && selected.environment === 'staging') console.log('Candidate ready: staging ECS, digest and HTTP checks passed.');
     }
     if (!process.exitCode && source && process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `Source: \`${source}\`\n\n[Workflow run](https://github.com/openprose/docs/actions/runs/${process.env.GITHUB_RUN_ID})\n`);
   }
