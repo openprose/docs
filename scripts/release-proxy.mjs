@@ -36,6 +36,11 @@ export function createReleaseProxyHandler(origins, report) {
       : mode === "b-page-a-assets" ? (isAsset ? "a" : "b") : mode;
     const event = { method: request.method, path: request.url, release, mode, status: null };
     report.requests.push(event);
+    const fail = (error) => {
+      event.error ??= error.message;
+      if (response.headersSent) response.destroy();
+      else { response.writeHead(502); response.end(); }
+    };
     const upstream = proxyRequest({
       hostname: "127.0.0.1",
       port: new URL(origins[release]).port,
@@ -45,13 +50,13 @@ export function createReleaseProxyHandler(origins, report) {
     }, (result) => {
       event.status = result.statusCode;
       response.writeHead(result.statusCode, result.headers);
+      result.on("error", fail);
+      result.on("close", () => {
+        if (!result.complete) fail(new Error("Upstream response closed before the body completed"));
+      });
       result.pipe(response);
     });
-    upstream.on("error", (error) => {
-      event.error = error.message;
-      if (!response.headersSent) response.writeHead(502);
-      response.end();
-    });
+    upstream.on("error", fail);
     request.pipe(upstream);
   };
 }

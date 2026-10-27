@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { createReleaseProxyHandler } from "./release-proxy.mjs";
+import { captureHttpChecks, captureContainerLogs } from "./release-evidence.mjs";
 import { execFile, spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
@@ -120,11 +121,10 @@ async function buildAndStart(release) {
     nodeVersion: (await exec("docker", ["exec", name, "node", "--version"])).stdout.trim(),
     nextVersion: (await exec("docker", ["exec", name, "node", "-p", "require('next/package.json').version"])).stdout.trim(),
   };
-  const http = await exec("pnpm", ["exec", "tsx", "scripts/check-http-surface.ts", origins[release], "public", "docs.openprose.ai"], { cwd: root, timeout: 120_000 });
-  const checks = JSON.parse(http.stdout);
-  await writeFile(join(output, `http-${release}.json`), JSON.stringify(checks, null, 2) + "\n");
-  if (http.stderr) await writeFile(join(output, `http-${release}-stderr.log`), http.stderr);
-  report.images[release].httpChecks = { total: checks.length, passed: checks.filter((check) => check.ok).length };
+  report.images[release].httpChecks = await captureHttpChecks(
+    () => exec("pnpm", ["exec", "tsx", "scripts/check-http-surface.ts", origins[release], "public", "docs.openprose.ai"], { cwd: root, timeout: 120_000 }),
+    output, release,
+  );
   await persist();
 }
 
@@ -135,7 +135,7 @@ async function cleanup(code) {
   server?.closeAllConnections();
   server?.close();
   for (const name of containers) {
-    try { await writeFile(join(output, `${name.endsWith("-a") ? "a" : "b"}-container.log`), (await exec("docker", ["logs", name])).stdout); } catch {}
+    try { await captureContainerLogs(() => exec("docker", ["logs", name]), join(output, `${name.endsWith("-a") ? "a" : "b"}-container.log`)); } catch {}
     try { await exec("docker", ["rm", "--force", name]); } catch (error) { console.error(`Could not remove test container ${name}: ${error.message}`); }
   }
   for (const tag of images) {

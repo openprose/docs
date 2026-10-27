@@ -53,6 +53,30 @@ async function fixture() {
 }
 
 describe("release diagnostic proxy", () => {
+  it("records a truncated upstream body and promptly terminates the downstream response", async () => {
+    const origin = await listen((_request, response) => {
+      response.writeHead(200, { "content-length": "100", "x-release": "a" });
+      response.write("partial body");
+      setTimeout(() => response.destroy(), 20);
+    });
+    const report = { requests: [], controls: [] };
+    const base = await listen(createReleaseProxyHandler({ a: origin, b: origin }, report));
+    const result = await new Promise<{ status: number; complete: boolean; body: string }>((resolve, reject) => {
+      const req = request(base, { path: "/truncated", signal: AbortSignal.timeout(500) }, (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => { body += chunk; });
+        response.on("error", () => {});
+        response.on("close", () => resolve({ status: response.statusCode!, complete: response.complete, body }));
+      });
+      req.on("error", reject);
+      req.end();
+    });
+    expect(result).toEqual({ status: 200, complete: false, body: "partial body" });
+    expect(report.requests).toMatchObject([{ path: "/truncated", release: "a", status: 200, error: expect.any(String) }]);
+    expect((await send(base, "/__release-check/health")).status).toBe(200);
+  });
+
   it.each(["absolute", "protocol-relative", "backslash authority"])("rejects a %s target without contacting another loopback server", async (kind) => {
     const { base, received } = await fixture();
     let escapedRequests = 0;
