@@ -53,7 +53,7 @@ configuration before rollout. `NEXT_PUBLIC_POSTHOG_HOST` retains its existing
 `https://us.i.posthog.com` fallback. These are build-time inputs; restarting the
 container with different values does not rebuild the browser bundle.
 
-The Docker build accepts these inputs. The existing main-branch Fly workflow
+The Docker build accepts these inputs. The trusted retained-image build
 sets production mode and consumes the existing `NEXT_PUBLIC_POSTHOG_KEY` secret.
 Production preflight in the workflow and Docker build also requires a separately
 supplied `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` for the previous Docs project.
@@ -63,9 +63,11 @@ rollout; this source change does not update any secret or transfer old Docs
 history from the previous project. An explicit previous-project opt-out (`0`) in local
 storage or its cookie prevents new-project initialization; unknown or unavailable
 legacy storage leaves the current SDK capture policy in place. The previous token
-is checked as supplied, without guessing it from the new token. A push or merge to main triggers deployment and
-requires the corresponding release approval. Retain the previous build and
-public configuration for rollback through the same workflow.
+is checked as supplied, without guessing it from the new token. Merging this
+change stops automatic Fly releases while leaving the running Fly service
+untouched. AWS delivery is disabled until explicitly configured and
+enabled. Production promotion and Fly recovery require approved retained images;
+see [Deployment](docs/DEPLOYMENT.md) for setup, bootstrap and recovery.
 
 The single client link observer emits `site:link_click` for the public Docs and
 language repositories, their linked source references, and the examples

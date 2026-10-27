@@ -1,0 +1,20 @@
+name: Stage Docs candidate
+on:
+  workflow_run:
+    workflows: [Build retained Docs images]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+  actions: read
+  id-token: write
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main' && vars.DOCS_AWS_ENABLED == 'true' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == 'openprose/docs'
+    uses: ./.github/workflows/release-docs.yml
+    secrets: inherit
+    with:
+      environment: staging
+      operation: promote
+      producer_run: ${{ format('{0}', github.event.workflow_run.id) }}
+      producer_attempt: ${{ format('{0}', github.event.workflow_run.run_attempt) }}
