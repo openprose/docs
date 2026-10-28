@@ -21,8 +21,9 @@ Configure these controls before relying on AWS delivery:
 - Protect main with required Actions check `verify`. Require human review of
   workflow, release script, build and task configuration changes.
 - Restrict `docs-staging` and `docs-production` environments to protected main.
-  Require production reviewers, prevent self-approval and disable protection
-  bypass where supported. Production registration and recovery use this approval.
+  Require one approval from a designated production reviewer; allow that reviewer
+  to approve a run they initiated. Disable protection bypass where supported.
+  Production registration and recovery use this approval.
 - Set repository secret `DOCS_BUILD_ROLE_ARN` and environment-specific secret
   `DOCS_RELEASE_ROLE_ARN` to the approved separate OIDC roles. Build trust must
   match main; release trust must match its exact environment. Set `DOCS_ROLE_ID`
