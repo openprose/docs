@@ -158,7 +158,7 @@ export async function notifyRelease({ aws, contract, alertsTopicArn, event }) {
     requireTaskArn(contract, event.requestedTaskArn);
   }
   const healthy = event.releaseOutcome === 'success' && (event.operation === 'bootstrap' || event.checkOutcome === 'success');
-  const result = event.operation === 'bootstrap' ? 'Registration only; checks not run.' : healthy ? (event.operation === 'recover' ? 'Manual recovery verified.' : 'Release verified.') : 'Release failed.';
+  const result = !healthy ? 'Release failed.' : event.operation === 'bootstrap' ? 'Registration only; checks not run.' : event.operation === 'recover' ? 'Manual recovery verified.' : 'Release verified.';
   const description = [
     result, `Operation: ${event.operation}`, `Deploy: ${event.releaseOutcome}`, `Checks: ${event.checkOutcome}`,
     `Run: ${event.runId}; attempt: ${event.runAttempt}`, `Source: ${event.sourceSha}`,

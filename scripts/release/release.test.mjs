@@ -347,3 +347,12 @@ test('notification refuses unbounded or untrusted event fields before publishing
     assert.equal(calls, 0);
   }
 });
+test('failed bootstrap notification leads with release failure', async () => {
+  let description;
+  await release.notifyRelease({
+    contract: fixture('production').contract,
+    event: { sourceSha: 'd'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', operation: 'bootstrap', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'failure', checkOutcome: 'skipped' },
+    aws: async args => { description = JSON.parse(args[args.indexOf('--message') + 1]).content.description; return {}; }
+  });
+  assert.equal(description.split('\n')[0], 'Release failed.');
+});
