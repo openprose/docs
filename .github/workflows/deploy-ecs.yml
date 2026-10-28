@@ -1,0 +1,86 @@
+name: Deploy Docs to ECS
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+      image_tag:
+        required: true
+        type: string
+      register_only:
+        default: false
+        type: boolean
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (inputs.environment == 'staging' || inputs.environment == 'production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: docs-${{ inputs.environment }}
+    concurrency:
+      group: docs-${{ inputs.environment }}
+      cancel-in-progress: false
+    env:
+      ACTIONS_STEP_DEBUG: 'false'
+      ACTIONS_RUNNER_DEBUG: 'false'
+      DOCS_RELEASE_CONFIG: ${{ secrets.DOCS_RELEASE_CONFIG }}
+      DOCS_ROLE_ID: ${{ secrets.DOCS_ROLE_ID }}
+      DOCS_ROLE_ARN: ${{ secrets.DOCS_RELEASE_ROLE_ARN }}
+      DOCS_ENVIRONMENT: ${{ inputs.environment }}
+      DOCS_IMAGE_TAG: ${{ inputs.image_tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Mask operational configuration
+        run: node scripts/release/release.mjs mask
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.DOCS_RELEASE_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          role-session-name: docs-release
+      - name: Read current configuration and resolve retained image
+        id: prepare
+        run: node scripts/release/release.mjs prepare-release
+      - uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
+        id: render
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}/docs-private
+        with:
+          task-definition: ${{ steps.prepare.outputs.task_definition }}
+          container-name: docs
+          image: ${{ steps.prepare.outputs.image }}
+      - name: Register and deploy rendered task
+        id: deploy
+        env:
+          DOCS_TASK_DEFINITION: ${{ steps.render.outputs.task-definition }}
+          DOCS_REGISTER_ONLY: ${{ inputs.register_only }}
+        run: node scripts/release/release.mjs deploy
+      - name: Verify requested revision, image and HTTP surface
+        id: check
+        if: ${{ success() && !inputs.register_only }}
+        env:
+          DOCS_TASK_ARN: ${{ steps.deploy.outputs.task_arn }}
+        run: node scripts/release/release.mjs check
+      - name: Notify release outcome
+        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          DOCS_TASK_ARN: ${{ steps.deploy.outputs.task_arn }}
+          DOCS_RELEASE_OUTCOME: ${{ steps.deploy.outcome }}
+          DOCS_CHECK_OUTCOME: ${{ steps.check.outcome }}
+        run: node scripts/release/release.mjs notify

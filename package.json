@@ -24,7 +24,8 @@
     "test": "vitest run",
     "check:emdash": "scripts/check-em-dash-in-content.sh",
     "check:links": "tsx scripts/check-links.ts",
-    "smoke:standalone": "tsx scripts/smoke-standalone.ts"
+    "smoke:standalone": "tsx scripts/smoke-standalone.ts",
+    "test:release": "node --test scripts/release/*.test.mjs"
   },
   "dependencies": {
     "@shikijs/transformers": "^4.0.2",
@@ -59,6 +60,7 @@
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.12"
+    "vitest": "^4.1.12",
+    "yaml": "2.8.3"
   }
 }

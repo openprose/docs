@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import dns from "node:dns";
+import { connectionOptions } from "../scripts/check-http-surface";
 import { checkSurface } from "../scripts/check-http-surface";
 
 type Reply = { status: number; type?: string; body?: string; location?: string; vary?: string };
@@ -183,4 +185,23 @@ describe("HTTP release checks", () => {
     expect(results.length).toBeGreaterThan(30);
     expect(results.every((result) => !result.ok && result.details)).toBe(true);
   });
+});
+
+describe("trusted release connection target", () => {
+  it.each(["http://origin.us-east-1.elb.amazonaws.com", "origin.us-east-1.elb.amazonaws.com:443", "127.0.0.1", "user@origin.us-east-1.elb.amazonaws.com", "origin.us-west-2.elb.amazonaws.com"])("rejects an untrusted connection target %s before probing", async (connectHost) => {
+    await expect(checkSurface("https://docs.example.com", { mode: "public", connectHost })).rejects.toThrow();
+  });
+});
+
+// DNS is the external boundary: inspect the real options used by HTTPS.
+it("connects via the ALB resolver while retaining Host and verified TLS servername", () => {
+  const lookup = vi.spyOn(dns, "lookup").mockImplementation(((_host: string, _options: unknown, callback: (error: null, address: string, family: number) => void) => callback(null, "127.0.0.1", 4)) as typeof dns.lookup);
+  try {
+    const options = connectionOptions(new URL("https://docs.example.com"), "synthetic-123.us-east-1.elb.amazonaws.com");
+    expect(options.servername).toBe("docs.example.com");
+    expect(options.rejectUnauthorized).toBe(true);
+    expect(options.hostname).toBeUndefined();
+    options.lookup!("docs.example.com", { family: 4 }, (() => {}) as never);
+    expect(lookup).toHaveBeenCalledWith("synthetic-123.us-east-1.elb.amazonaws.com", { family: 4 }, expect.any(Function));
+  } finally { lookup.mockRestore(); }
 });

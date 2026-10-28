@@ -1,0 +1,139 @@
+name: Release Docs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Release both environments, register bootstrap revisions, or recover one environment
+        type: choice
+        options: [release, bootstrap, recover]
+        default: release
+        required: true
+      environment:
+        description: Recovery destination
+        type: choice
+        options: [staging, production]
+        default: production
+      image_tag:
+        description: Retained source-run-attempt tag (recovery only)
+        type: string
+permissions:
+  contents: read
+jobs:
+  checks:
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.DOCS_AWS_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.operation == 'bootstrap' || (inputs.operation == 'release' && vars.DOCS_AWS_ENABLED == 'true'))))
+    uses: ./.github/workflows/verify.yml
+    permissions:
+      contents: read
+      pull-requests: read
+  build:
+    needs: checks
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.DOCS_AWS_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.operation == 'bootstrap' || (inputs.operation == 'release' && vars.DOCS_AWS_ENABLED == 'true'))))
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_tag: ${{ steps.build.outputs.image_tag }}
+    env:
+      ACTIONS_STEP_DEBUG: 'false'
+      ACTIONS_RUNNER_DEBUG: 'false'
+      DOCS_RELEASE_CONFIG: ${{ secrets.DOCS_RELEASE_CONFIG }}
+      DOCS_ROLE_ID: ${{ secrets.DOCS_ROLE_ID }}
+      DOCS_ROLE_ARN: ${{ secrets.DOCS_BUILD_ROLE_ARN }}
+      NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
+      NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN: ${{ secrets.NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Mask operational configuration
+        run: node scripts/release/release.mjs mask
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.DOCS_BUILD_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          role-session-name: docs-build
+      - name: Read current build configuration
+        id: prepare
+        run: node scripts/release/release.mjs prepare-build
+      - uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+        with:
+          mask-password: 'true'
+          skip-logout: 'false'
+      - name: Build, test and retain both images
+        id: build
+        run: node scripts/release/build.mjs
+      - name: Log out of registry
+        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        env:
+          DOCS_REGISTRY: ${{ steps.prepare.outputs.registry }}
+        run: |
+          node --input-type=module <<'JS'
+          import { runPrivate } from './scripts/release/release.mjs';
+          try { await runPrivate('docker', ['logout', process.env.DOCS_REGISTRY]); }
+          catch { console.error('Registry logout failed.'); process.exitCode = 1; }
+          JS
+  staging:
+    needs: build
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.DOCS_AWS_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.operation == 'bootstrap' || (inputs.operation == 'release' && vars.DOCS_AWS_ENABLED == 'true'))))
+    uses: ./.github/workflows/deploy-ecs.yml
+    with:
+      environment: staging
+      image_tag: ${{ needs.build.outputs.image_tag }}
+      register_only: ${{ inputs.operation == 'bootstrap' }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+  production:
+    needs: [build, staging]
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      ((github.event_name == 'push' && vars.DOCS_AWS_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' &&
+        (inputs.operation == 'bootstrap' || (inputs.operation == 'release' && vars.DOCS_AWS_ENABLED == 'true'))))
+    uses: ./.github/workflows/deploy-ecs.yml
+    with:
+      environment: production
+      image_tag: ${{ needs.build.outputs.image_tag }}
+      register_only: ${{ inputs.operation == 'bootstrap' }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+  recover:
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.operation == 'recover'
+    uses: ./.github/workflows/deploy-ecs.yml
+    with:
+      environment: ${{ inputs.environment }}
+      image_tag: ${{ inputs.image_tag }}
+      register_only: false
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write

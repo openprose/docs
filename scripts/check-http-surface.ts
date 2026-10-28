@@ -1,7 +1,8 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { request as httpRequest, type IncomingHttpHeaders } from "node:http";
-import { request as httpsRequest } from "node:https";
+import { request as httpsRequest, type RequestOptions } from "node:https";
+import dns from "node:dns";
 
 export type CheckResult = { name: string; ok: boolean; details?: string };
 type Mode = "public" | "preview";
@@ -18,10 +19,22 @@ type Probe = {
 
 // Use Node's HTTP client: fetch can discard an explicit Host header, which
 // would test the origin's default host instead of the legacy-host redirect.
-function request(url: URL, probe: Probe): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
+export function connectionOptions(url: URL, connectHost?: string): RequestOptions {
+  if (!connectHost) return {};
+  if (url.protocol !== "https:" || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.us-east-1\.elb\.amazonaws\.com$/.test(connectHost)) {
+    throw new Error("Expected a trusted ALB hostname and HTTPS probe origin");
+  }
+  return {
+    servername: url.hostname,
+    rejectUnauthorized: true,
+    lookup: (_hostname, options, callback) => dns.lookup(connectHost, options, callback),
+  };
+}
+
+function request(url: URL, probe: Probe, connectHost?: string): Promise<{ status: number; headers: IncomingHttpHeaders; body: string }> {
   return new Promise((resolveResponse, reject) => {
     const send = url.protocol === "https:" ? httpsRequest : httpRequest;
-    const req = send(url, { method: probe.method ?? "GET", headers: probe.headers, signal: AbortSignal.timeout(10_000) }, (response) => {
+    const req = send(url, { ...connectionOptions(url, connectHost), method: probe.method ?? "GET", headers: probe.headers, signal: AbortSignal.timeout(10_000) }, (response) => {
       const chunks: Buffer[] = [];
       let length = 0;
       response.on("data", (chunk: Buffer) => {
@@ -51,13 +64,14 @@ const jsonSearch = (body: string) => {
 /** Check externally observable behavior without reading or changing the server's files. */
 export async function checkSurface(
   baseUrl: string,
-  options: { mode: Mode; legacyHost?: string },
+  options: { mode: Mode; legacyHost?: string; connectHost?: string },
 ): Promise<CheckResult[]> {
   const base = new URL(baseUrl);
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password) {
     throw new Error("Expected an HTTP(S) origin without credentials");
   }
   if (!["public", "preview"].includes(options.mode)) throw new Error("Expected public or preview mode");
+  connectionOptions(base, options.connectHost);
   const probes: Probe[] = [
     ...["/", "/setup"].map((path): Probe => ({ path, status: 200, type: "text/html", body: html })),
     ...["/setup.mdx", "/index.mdx", "/.mdx", "/llms.mdx/setup/content.md"].map((path): Probe => ({
@@ -113,7 +127,7 @@ export async function checkSurface(
     const method = probe.method ?? "GET";
     const name = `${method} ${probe.path}${probe.label ? ` (${probe.label})` : ""}`;
     try {
-      const response = await request(new URL(probe.path, base), probe);
+      const response = await request(new URL(probe.path, base), probe, options.connectHost);
       const type = response.headers["content-type"]?.split(";")[0].trim().toLowerCase();
       const location = response.headers.location;
       const ok = response.status === probe.status && (!probe.type || type === probe.type) &&
@@ -128,12 +142,12 @@ export async function checkSurface(
 }
 
 async function main() {
-  const [base, mode, legacyHost] = process.argv.slice(2);
+  const [base, mode, legacyHost, connectHost] = process.argv.slice(2);
   if (!base || !["public", "preview"].includes(mode)) {
-    console.error("Usage: tsx scripts/check-http-surface.ts <base-url> <public|preview> [legacy-host]");
+    console.error("Usage: tsx scripts/check-http-surface.ts <base-url> <public|preview> [legacy-host] [trusted-alb-host]");
     process.exitCode = 2;
   } else {
-    const results = await checkSurface(base, { mode: mode as Mode, legacyHost });
+    const results = await checkSurface(base, { mode: mode as Mode, legacyHost, connectHost });
     console.log(JSON.stringify(results, null, 2));
     process.exitCode = results.every((result) => result.ok) ? 0 : 1;
   }

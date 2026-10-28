@@ -1,43 +1,36 @@
-name: Deploy docs to Fly.io
-
+name: Recover Docs on Fly.io
 on:
-  push:
-    branches: [main]
-
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Retained Fly registry image with sha256 digest (no rebuild)
+        required: true
+        type: string
 concurrency:
-  group: deploy-docs-${{ github.ref }}
+  group: docs-production
   cancel-in-progress: false
-
 permissions:
   contents: read
-
 jobs:
   deploy:
+    if: github.ref == 'refs/heads/main'
+    environment: docs-production
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Fly CLI
-        uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
-
-      - name: Deploy to Fly.io
-        run: |
-          sh scripts/check-analytics-build.sh
-          flyctl deploy \
-            --remote-only \
-            --build-arg DOCS_PREVIEW_MODE=false \
-            --build-arg NEXT_PUBLIC_POSTHOG_ENVIRONMENT="$NEXT_PUBLIC_POSTHOG_ENVIRONMENT" \
-            --build-arg NEXT_PUBLIC_POSTHOG_KEY="$NEXT_PUBLIC_POSTHOG_KEY" \
-            --build-arg NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN="$NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+      - name: Deploy retained image
         env:
+          IMAGE: ${{ inputs.image }}
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-          NEXT_PUBLIC_POSTHOG_ENVIRONMENT: production
-          NEXT_PUBLIC_POSTHOG_KEY: ${{ secrets.NEXT_PUBLIC_POSTHOG_KEY }}
-          NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN: ${{ secrets.NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN }}
-
-      # The Fly health check only probes /, so it stays green when a route
-      # handler breaks. Check the route crawlers need on the live site. A
-      # failure does not roll back; it marks this run failed.
+        run: |
+          if ! [[ "$IMAGE" =~ ^registry\.fly\.io/openprose-docs@sha256:[a-f0-9]{64}$ ]]; then
+            echo 'Expected an immutable retained Docs Fly image.' >&2
+            exit 1
+          fi
+          flyctl deploy --image "$IMAGE"
       - name: Verify live robots.txt
         run: scripts/check-live-robots.sh https://docs.prose.md
