@@ -148,8 +148,17 @@ export async function checkRelease({ aws, contract, taskArn, digest, probeConnec
   await identity('after HTTP');
   return checks;
 }
+export async function checkStagedRelease({ aws, contract, digest, probeConnectHost, probe = probeSurface }) {
+  validateContract(contract, 'staging');
+  let taskArn;
+  try {
+    taskArn = (await observe(aws, contract)).primaryTaskArn;
+    requireTaskArn(contract, taskArn);
+  } catch { throw new Error('Staging revision unavailable'); }
+  return checkRelease({ aws, contract, taskArn, digest, probeConnectHost, probe });
+}
 export async function notifyRelease({ aws, contract, alertsTopicArn, event }) {
-  requireCondition(event.environment === contract.environment && ['release', 'bootstrap', 'recover'].includes(event.operation), 'Invalid notification operation');
+  requireCondition(event.environment === contract.environment && ['release', 'promote', 'bootstrap', 'recover'].includes(event.operation), 'Invalid notification operation');
   requireCondition([event.runId, event.runAttempt].every(v => typeof v === 'string' && /^[1-9][0-9]{0,19}$/.test(v)), 'Invalid notification run');
   requireCondition(/^[a-f0-9]{40}$/.test(event.sourceSha ?? '') && imageTagPattern.test(event.imageTag ?? '') && event.imageTag.length <= 128 && event.imageTag.startsWith(`${event.sourceSha}-`) && digestPattern.test(event.digest ?? ''), 'Invalid notification image');
   requireCondition([event.releaseOutcome, event.checkOutcome].every(v => ['success', 'failure', 'cancelled', 'skipped'].includes(v)), 'Invalid notification outcome');
@@ -224,17 +233,21 @@ async function main() {
       await outputs({ registry: production.repositoryUrl.split('/')[0] });
     } else if (command === 'prepare-release') {
       const environment = process.env.DOCS_ENVIRONMENT;
+      const verifyOnly = process.env.DOCS_VERIFY_ONLY === 'true';
+      requireCondition(!verifyOnly || (environment === 'staging' && process.env.DOCS_REGISTER_ONLY !== 'true'), 'Invalid verification mode');
       const contract = await loadContract({ aws, config, environment }); maskReleaseDestinations(contract);
       const imageTag = process.env.DOCS_IMAGE_TAG;
       const image = await resolveImage({ aws, contract, imageTag }); mask(image);
       const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, 'utf8'));
       const operation = event.inputs?.operation ?? 'release';
-      requireCondition(['release', 'bootstrap', 'recover'].includes(operation), 'Invalid operation');
+      requireCondition(['release', 'promote', 'bootstrap', 'recover'].includes(operation), 'Invalid operation');
       const state = { contract, imageTag, digest: image.split('@')[1], operation, probeConnectHost: config.probeConnectHost, alertsTopicArn: config.alertsTopicArn };
       await privateFile('release.json', state);
       const file = await privateFile('task.json', contract.taskTemplate);
       await outputs({ task_definition: file, image });
+      if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, `Selected image tag: ${imageTag}\n`);
     } else if (command === 'deploy') {
+      requireCondition(process.env.DOCS_VERIFY_ONLY !== 'true', 'Invalid verification mode');
       const state = JSON.parse(await readFile(join(privateDirectory(), 'release.json'), 'utf8'));
       await deployRelease({ aws, ...state, taskDefinition: process.env.DOCS_TASK_DEFINITION, registerOnly: process.env.DOCS_REGISTER_ONLY === 'true', onRegistered: async taskArn => {
         state.requestedTaskArn = taskArn;
@@ -245,11 +258,14 @@ async function main() {
       const state = JSON.parse(await readFile(join(privateDirectory(), 'release.json'), 'utf8'));
       const requestedTaskArn = process.env.DOCS_TASK_ARN || state.requestedTaskArn || null;
       if (command === 'check') {
-        const checks = await checkRelease({ aws, ...state, taskArn: requestedTaskArn });
+        const checks = process.env.DOCS_VERIFY_ONLY === 'true'
+          ? await checkStagedRelease({ aws, ...state })
+          : await checkRelease({ aws, ...state, taskArn: requestedTaskArn });
         await privateFile('checks.json', checks);
         requireCondition(checks.every(c => c.ok), 'Release checks failed');
         console.log('Requested revision, image and HTTP checks passed.');
       } else {
+        requireCondition(process.env.DOCS_VERIFY_ONLY !== 'true', 'Invalid verification mode');
         const event = { sourceSha: state.imageTag.split('-')[0], runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT, environment: state.contract.environment, operation: state.operation, imageTag: state.imageTag, digest: state.digest, requestedTaskArn, releaseOutcome: process.env.DOCS_RELEASE_OUTCOME, checkOutcome: process.env.DOCS_CHECK_OUTCOME };
         const result = await notifyRelease({ aws, ...state, event });
         if (!result.delivered) { console.log('::warning::Release notification delivery failed; inspect privately.'); process.exitCode = 1; }

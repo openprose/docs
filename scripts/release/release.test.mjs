@@ -87,9 +87,41 @@ test('stable service on an old revision cannot pass after native rollback', asyn
   const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest, probeConnectHost: config.probeConnectHost, probe: async () => [{ name: 'HTTP', ok: true }] });
   assert.ok(checks.some(c => !c.ok));
 });
+test('promotion checks the selected digest on the current staging revision using read-only observations', async () => {
+  available('checkStagedRelease'); const { contract } = fixture();
+  for (const scenario of ['healthy','wrong digest','replacement','unhealthy','malformed','wrong service','wrong revision','HTTP failure']) {
+    const f = observer(contract, scenario === 'replacement' ? [taskArn,taskArn,previousTaskArn] : [taskArn]);
+    const aws = async args => {
+      const result = await f.aws(args);
+      if (args[1] === 'describe-services' && scenario === 'unhealthy') result.services[0].runningCount = 0;
+      if (args[1] === 'describe-tasks' && scenario === 'malformed') result.tasks = null;
+      if (args[1] === 'describe-services' && scenario === 'wrong service') result.services[0].serviceArn = 'untrusted-service';
+      if (args[1] === 'describe-services' && scenario === 'wrong revision') result.services[0].taskDefinition = 'untrusted-revision';
+      return result;
+    };
+    const check = () => release.checkStagedRelease({ aws, contract, digest: scenario === 'wrong digest' ? oldDigest : digest,
+      probeConnectHost: config.probeConnectHost, probe: async (_c,host) => { assert.equal(host,config.probeConnectHost); return [{name:'HTTP',ok:scenario !== 'HTTP failure'}]; } });
+    if (['malformed','wrong service','wrong revision'].includes(scenario)) await assert.rejects(check, /Staging revision unavailable/);
+    else assert.equal((await check()).every(c=>c.ok),scenario === 'healthy',scenario);
+    assert.ok(f.calls.every(args=>args[0]==='ecs' && ['describe-services','list-tasks','describe-tasks'].includes(args[1])));
+  }
+  let reads = 0;
+  await assert.rejects(release.checkStagedRelease({aws:async()=>{reads++;},contract:fixture('production').contract,digest})); assert.equal(reads,0);
+});
+test('verify-only preparation rejects production or registration before any cloud access', async t => {
+  const f = await objects(t), event = join(f.dir,'event.json'), calls = join(f.dir,'calls.jsonl');
+  await writeFile(event, JSON.stringify({inputs:{operation:'recover'}}));
+  await writeFile(join(f.dir,'aws'), `#!/usr/bin/env node\nconst fs=require('fs'),a=process.argv.slice(2);fs.appendFileSync(process.env.FAKE_CALLS,'read\\n');if(a[0]==='s3api'){fs.writeFileSync(a[a.indexOf('--key')+2],process.env.FAKE_CONTRACT);console.log('{}');}else console.log(JSON.stringify({imageDetails:[{imageDigest:process.env.FAKE_DIGEST}]}));`,{mode:0o700});
+  for (const changed of [{DOCS_ENVIRONMENT:'production'}, {DOCS_REGISTER_ONLY:'true'}]) {
+    const environment=changed.DOCS_ENVIRONMENT ?? 'staging';
+    const result = spawnSync(process.execPath,['scripts/release/release.mjs','prepare-release'],{env:{...process.env,PATH:`${f.dir}:${process.env.PATH}`,RUNNER_TEMP:f.dir,DOCS_RELEASE_CONFIG:JSON.stringify({...config,contracts:{[environment]:{key:`contracts/${environment}/current.json`}}}),DOCS_ENVIRONMENT:environment,DOCS_IMAGE_TAG:imageTag,DOCS_VERIFY_ONLY:'true',GITHUB_EVENT_PATH:event,GITHUB_OUTPUT:join(f.dir,'outputs'),FAKE_CALLS:calls,FAKE_CONTRACT:JSON.stringify(fixture(environment).contract),FAKE_DIGEST:digest,...changed},encoding:'utf8'});
+    assert.equal(result.status,1); assert.doesNotMatch(result.stdout+result.stderr,/Error:|stack/);
+  }
+  await assert.rejects(readFile(calls),{code:'ENOENT'});
+});
 test('production alerts are attempted even if summary delivery fails; health stays independent', async () => {
   available('notifyRelease'); const { contract } = fixture('production'); const calls = [];
-  const event = { sourceSha: 'd'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', operation: 'recover', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'failure', checkOutcome: 'skipped' };
+  const event = { sourceSha: 'd'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', operation: 'promote', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'failure', checkOutcome: 'skipped' };
   const result = await release.notifyRelease({ contract, alertsTopicArn: contract.releaseTopicArn.replace('docs-releases', 'docs-alerts'), event, aws: async args => { calls.push(args); throw Error('synthetic private failure'); } });
   assert.deepEqual(result, { delivered: false }); assert.equal(calls.length, 2);
   assert.ok(calls.every(args => args[0] === 'sns' && args[1] === 'publish'));
@@ -112,22 +144,23 @@ test('CLI preparation failures are bounded private owner-only records', async t 
   assert.equal(r.status, 1); assert.doesNotMatch(r.stdout+r.stderr, /private-untrusted|Error:|stack/);
   const file = join(f.dir, 'docs-private', 'failure.json'); assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { command: 'prepare-release', reason: 'rejected_or_unavailable' }); assert.equal((await stat(file)).mode & 0o777, 0o600);
 });
-test('recovery preparation uses retained image and current template, including empty settings, without health or history reads', async t => {
+for (const operation of ['recover','promote']) test(`${operation} preparation uses retained image and current template without health or history reads`, async t => {
   const f = await objects(t); const { contract } = fixture();
   contract.taskTemplate.containerDefinitions[0].dockerLabels = { release: '' };
   contract.taskTemplate.volumes = [];
-  const event = join(f.dir,'event.json'); await writeFile(event, JSON.stringify({ inputs: { operation: 'recover' } }));
+  const event = join(f.dir,'event.json'); await writeFile(event, JSON.stringify({ inputs: { operation } }));
   const executable = join(f.dir,'aws'); const calls = join(f.dir,'calls.jsonl');
   await writeFile(executable, `#!/usr/bin/env node\nconst fs = require('fs'); const args = process.argv.slice(2);fs.appendFileSync(process.env.FAKE_CALLS, JSON.stringify(args)+'\\n'); if(args[0]==='s3api' && args[1]==='get-object') {fs.writeFileSync(args[args.indexOf('--key')+2],process.env.FAKE_CONTRACT);console.log('{}');} else if(args[0]==='ecr' && args[1]==='describe-images')console.log(JSON.stringify({imageDetails:[{imageDigest:process.env.FAKE_DIGEST}]}));else process.exit(9);\n`, { mode: 0o700 });
-  const result=spawnSync(process.execPath,['scripts/release/release.mjs','prepare-release'],{env:{...process.env,PATH:`${f.dir}:${process.env.PATH}`,RUNNER_TEMP:f.dir,DOCS_RELEASE_CONFIG:JSON.stringify(config),DOCS_ENVIRONMENT:'staging',DOCS_IMAGE_TAG:imageTag,GITHUB_EVENT_PATH:event,GITHUB_OUTPUT:join(f.dir,'outputs'),FAKE_CALLS:calls,FAKE_CONTRACT:JSON.stringify(contract),FAKE_DIGEST:oldDigest},encoding:'utf8'});
+  const result=spawnSync(process.execPath,['scripts/release/release.mjs','prepare-release'],{env:{...process.env,PATH:`${f.dir}:${process.env.PATH}`,RUNNER_TEMP:f.dir,DOCS_RELEASE_CONFIG:JSON.stringify(config),DOCS_ENVIRONMENT:'staging',DOCS_IMAGE_TAG:imageTag,DOCS_VERIFY_ONLY:String(operation==='promote'),GITHUB_EVENT_PATH:event,GITHUB_OUTPUT:join(f.dir,'outputs'),GITHUB_STEP_SUMMARY:join(f.dir,'summary'),FAKE_CALLS:calls,FAKE_CONTRACT:JSON.stringify(contract),FAKE_DIGEST:oldDigest},encoding:'utf8'});
   assert.equal(result.status,0,result.stderr);
+  assert.equal(await readFile(join(f.dir,'summary'),'utf8'), `Selected image tag: ${imageTag}\n`);
   const masks = registeredMasks(result.stdout);
   for (const scalar of ['512','1024','3000','true','false','production']) assert.equal(masks.includes(scalar), false);
   for (const identifier of [contract.clusterArn, contract.serviceArn, contract.repositoryUrl, contract.taskFamily, contract.probeBaseUrl, contract.releaseTopicArn, contract.taskTemplate.taskRoleArn, contract.taskTemplate.executionRoleArn, contract.taskTemplate.containerDefinitions[0].logConfiguration.options['awslogs-group']]) assert.ok(masks.includes(identifier));
   const commands=(await readFile(calls,'utf8')).trim().split('\n').map(JSON.parse);
   assert.deepEqual(commands.map(c=>c.slice(0,2)),[['s3api','get-object'],['ecr','describe-images']]);
   const state=JSON.parse(await readFile(join(f.dir,'docs-private','release.json'),'utf8'));
-  assert.equal(state.operation,'recover'); assert.equal(state.digest,oldDigest); assert.deepEqual(state.contract,contract);
+  assert.equal(state.operation,operation); assert.equal(state.digest,oldDigest); assert.deepEqual(state.contract,contract);
   assert.deepEqual(JSON.parse(await readFile(join(f.dir,'docs-private','task.json'),'utf8')),contract.taskTemplate);
   assert.equal((await stat(join(f.dir,'docs-private'))).mode & 0o777,0o700);
   assert.equal((await stat(join(f.dir,'docs-private','task.json'))).mode & 0o777,0o600);

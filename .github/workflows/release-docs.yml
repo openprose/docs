@@ -5,9 +5,9 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Release both environments, register bootstrap revisions, or recover one environment
+        description: Release to staging, promote a staged tag, bootstrap, or recover
         type: choice
-        options: [release, bootstrap, recover]
+        options: [release, promote, bootstrap, recover]
         default: release
         required: true
       environment:
@@ -16,7 +16,7 @@ on:
         options: [staging, production]
         default: production
       image_tag:
-        description: Retained source-run-attempt tag (recovery only)
+        description: Existing source-run-attempt tag (promotion or recovery)
         type: string
 permissions:
   contents: read
@@ -108,18 +108,45 @@ jobs:
     permissions:
       contents: read
       id-token: write
+  verify-staging:
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.operation == 'promote' &&
+      vars.DOCS_AWS_ENABLED == 'true' && inputs.image_tag != ''
+    uses: ./.github/workflows/deploy-ecs.yml
+    with:
+      environment: staging
+      image_tag: ${{ inputs.image_tag }}
+      verify_only: true
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
   production:
+    needs: [verify-staging]
+    if: >-
+      github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' && inputs.operation == 'promote' &&
+      vars.DOCS_AWS_ENABLED == 'true' && inputs.image_tag != '' &&
+      needs['verify-staging'].result == 'success'
+    uses: ./.github/workflows/deploy-ecs.yml
+    with:
+      environment: production
+      image_tag: ${{ inputs.image_tag }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+  bootstrap-production:
     needs: [build, staging]
     if: >-
       github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
-      ((github.event_name == 'push' && vars.DOCS_AWS_ENABLED == 'true') ||
-       (github.event_name == 'workflow_dispatch' &&
-        (inputs.operation == 'bootstrap' || (inputs.operation == 'release' && vars.DOCS_AWS_ENABLED == 'true'))))
+      github.event_name == 'workflow_dispatch' && inputs.operation == 'bootstrap'
     uses: ./.github/workflows/deploy-ecs.yml
     with:
       environment: production
       image_tag: ${{ needs.build.outputs.image_tag }}
-      register_only: ${{ inputs.operation == 'bootstrap' }}
+      register_only: true
     secrets: inherit
     permissions:
       contents: read
