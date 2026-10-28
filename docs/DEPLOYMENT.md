@@ -1,217 +1,161 @@
 # Deployment
 
-## Setup and configuration
+## Setup and protection
 
-Pull requests retain the required `verify` check, including the informational
-production dependency audit, source checks, release tests, and standalone HTTP
-smoke checks in public and preview modes. They receive no cloud write credentials.
-Trusted main builds call those same checks against their exact source, build both
-Linux/amd64 images, run the HTTP surface checks against each actual container,
-then publish immutable image digests and a private versioned manifest. The build
-uses the pinned Docker base and pnpm version, bypassing the model-backed build
-preparation hook. Production retains the current and legacy analytics inputs; preview has
-production analytics disabled. The manifest records source/run/attempt identity,
-base image, lockfile and configuration fingerprints.
+Pull requests keep the required `verify` check, including source, application and
+release tests, link and punctuation checks, and public/preview standalone HTTP
+checks. They receive no cloud write credentials. Trusted main runs those checks
+before building both Linux/amd64 images. Both actual containers must pass the
+HTTP surface checks before either image is pushed. The public build uses the
+existing production and previous-project analytics inputs; preview disables
+production analytics. Docker uses the pinned base and pnpm version and bypasses
+the model-backed build hook.
 
-Merging these workflows stops automatic Fly releases. It does not stop or change
-the running Fly service, DNS, any AWS service or GitHub configuration. Automated
-AWS build/staging jobs remain disabled when the repository variable
-`DOCS_AWS_ENABLED` is absent or differs from the exact string `true`. Manual
-trusted-main build and bootstrap are deliberately available before enablement.
-Do not enable automatic delivery before bootstrap verification is complete.
+Merging this source stops automatic Fly releases. It changes no running service,
+DNS, infrastructure or GitHub configuration. Ordinary AWS delivery stays disabled
+unless repository variable `DOCS_AWS_ENABLED` equals `true`. Deliberate bootstrap
+and recovery dispatches remain available before enablement on protected main.
 
-An administrator must first configure these controls; their presence is not
-established by the workflow files:
+Configure these controls before relying on AWS delivery:
 
-- Preserve strict main protection with required Actions check `verify`. Require
-  reviewed changes to workflow files, release scripts, build configuration and
-  deployment contracts before trusting main for cloud access. Existing protection
-  alone does not establish a human review requirement.
-- Create `docs-staging` and `docs-production` deployment environments, both
-  restricted to protected main. Configure production required reviewers as the
-  authorized maintainers, prevent self-approval, and disable protection bypass
-  where supported. Both promotion and rollback require this approval.
-- Set repository secret `DOCS_BUILD_ROLE_ARN` to the approved main-only build role.
-  Set environment secret `DOCS_RELEASE_ROLE_ARN` separately in each environment
-  to its approved environment-only role. Set repository secret `DOCS_ROLE_ID` to
-  the build role's IAM unique role ID, and override it in each environment with
-  that release role's ID. The owner obtains these privately from IAM role metadata
-  during setup; the runner receives no extra IAM read permission. Preflight rejects
-  a missing/malformed ID and masks it before the official credentials action can
-  log its assumed-role identity. Never publish these identifiers. OIDC trust must match the repository,
-  main ref for builds and exact environment names for release roles.
-- Set repository and environment secret `DOCS_RELEASE_CONFIG` to approved private
-  configuration described below. Release environments must have their own copy;
-  the build needs both contract references. Retain the existing
-  `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` and
-  `FLY_API_TOKEN` secrets. No new production analytics destination is inferred.
-- Leave repository variable `DOCS_AWS_ENABLED` unset until the ordered bootstrap
-  below succeeds. Set it to `true` only for the explicitly approved release
-  transition. Unset it to pause automatic build/staging and manual normal
-  promotion/rollback during maintenance; explicit bootstrap/verification remains
-  available to maintainers and still requires environment approval.
+- Protect main with required Actions check `verify`. Require human review of
+  workflow, release script, build and task configuration changes.
+- Restrict `docs-staging` and `docs-production` environments to protected main.
+  Require production reviewers, prevent self-approval and disable protection
+  bypass where supported. Production registration and recovery use this approval.
+- Set repository secret `DOCS_BUILD_ROLE_ARN` and environment-specific secret
+  `DOCS_RELEASE_ROLE_ARN` to the approved separate OIDC roles. Build trust must
+  match main; release trust must match its exact environment. Set `DOCS_ROLE_ID`
+  to each role's IAM unique role ID: repository scope for build, overridden in
+  each environment for release. Obtain these privately from IAM metadata.
+- Set repository and environment `DOCS_RELEASE_CONFIG` secrets as described below.
+  Keep the existing `NEXT_PUBLIC_POSTHOG_KEY`,
+  `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` and `FLY_API_TOKEN` secrets. This change
+  does not change analytics projects or transfer history.
+- Keep Actions runner and step debugging disabled. Preflight rejects debug mode
+  or a missing role ID before any AWS action. Review hosted logs privately before
+  enabling routine delivery; offline fixtures do not prove runner redaction.
 
-`DOCS_RELEASE_CONFIG` is JSON with fields `bucket`, `contracts`,
-`probeConnectHost` and `alertsTopicArn`. `contracts` maps `staging` and
-`production` to the exact approved `{key, versionId, sha256}` references for
-`contracts/<environment>/current.json`. `bucket` names the private versioned
-bucket; `probeConnectHost` is the approved ALB DNS connection target; production
-requires the approved recovery-alert topic `alertsTopicArn`. Obtain these values
-from approved infrastructure outputs through a private operator handoff. Do not
-paste infrastructure outputs into workflow inputs, public comments or logs.
-Update protected configuration after a contract change while release activity
-is paused. A mismatched current contract fails closed. Release roles need only
-their existing exact-prefix reads/writes and ECS/ECR/SNS permissions; no Terraform
-state access, S3 listing, deletion, mutable pointer or contract write is used.
+`DOCS_RELEASE_CONFIG` contains `{bucket, contracts, probeConnectHost,
+alertsTopicArn?}`. Each `contracts[environment]` contains only `{key}`, naming
+`contracts/<environment>/current.json`. The build configuration supplies both
+keys; each release environment supplies only its own. `probeConnectHost` is the
+approved ALB connection hostname. Production also supplies `alertsTopicArn` for
+independent failure alerts. Obtain all values from approved infrastructure outputs
+through a private operator channel. Never paste infrastructure identities into
+public inputs, comments or logs.
 
-Release jobs read protected configuration **after** environment approval, then
-re-authenticate the successful build's repository, workflow, main source, run and
-attempt plus independently completed exact-source `verify` job through the GitHub
-API. They pin the original manifest bytes to an S3 version and hash. Production
-also requires a successful staging receipt for that exact manifest/source/digest
-and the current approved staging contract. A supplied producer ID alone is never
-proof. All operational references are derived privately, with no public outputs
-or uploaded Actions artifacts; public summaries contain source SHA and run URLs.
-Private runner diagnostics and receipts are ephemeral on hosted runners. S3
-persistence failure makes the run fail; repair delivery and run fresh verification
-to establish new immutable evidence rather than relying on hosted-runner files.
+The job reads the latest applied current object after environment approval. There
+are no approved version/hash references to rotate after an infrastructure change.
+Terraform owns the entire task configuration; the render action replaces only the
+`docs` image with an ECR digest. No Terraform state access, contract writes,
+release receipts or historical run discovery are required. Pause delivery and
+drain active and queued releases before changing infrastructure or configuration.
+This coordination is required: Terraform and CI do not share an atomic lock.
+
+## Three operations
+
+**Release Docs** runs automatically for main pushes when enabled. It can also be
+dispatched on main with `operation: release`. The graph is checks, build, staging,
+then protected production approval. Failed staging blocks production. Production
+uses the same build tag without rebuilding, while selecting its public image
+from the production repository. There is no workflow-wide lock: another candidate
+can reach staging while production approval is pending.
+
+Both images use the tag `<40-character-source-sha>-<run-id>-<build-attempt>`. Only
+this source-derived tag passes between jobs. Use **Re-run failed jobs** after a
+successful build to retain the original tag; a deployment attempt does not select
+a new image. **Re-run all jobs** rebuilds under the new build attempt and produces
+a new tag. Confirm hosted rerun behavior during initial activation. Reject obsolete
+production approvals when a newer candidate supersedes them. There is no ancestry
+check or automatic rejection of stale approvals.
+
+`operation: bootstrap` runs checks and builds both images, then registers staging
+and production task revisions without updating or probing any service. Production
+registration still requires approval. This is registration, not verified delivery.
+
+`operation: recover` takes `environment: staging | production` and `image_tag`.
+It bypasses builds and staging dependencies, resolves the retained tag only in the
+selected environment's ECR repository, renders it with the latest applied task
+configuration and deploys through that environment's protected job. It works when
+the current service is unhealthy and does not require a receipt, old run selector
+or proof from staging. Recover staging first when useful, then deliberately select
+the same retained tag for production. The source used to run recovery is trusted
+main; the chosen image may be older.
 
 ## Bootstrap without changing public DNS
 
-1. Provision contracts, repositories and OIDC roles with services disabled. Keep
-   the public origin on Fly. Configure the environments and secrets above.
-2. Dispatch **Build retained Docs images** on protected main. It reruns source
-   checks and retains both tested images. Record its run ID and successful
-   attempt. No service is updated.
-3. Dispatch **Release Docs** on protected main with environment
-   `staging`, operation `register`, and that producer run/attempt. Repeat for
-   `production`, obtaining the required production approval. Each run only
-   registers an immutable task revision and saves a private registration result;
-   it cannot announce a successful deployment. Production registration requires
-   no staging deployment receipt, because no service exists yet. Retrieve the
-   registration result and exact task revision through the private infrastructure
-   operator channel; never paste it into a public workflow summary.
-4. The operator explicitly enables each service using its registered bootstrap
-   revision in the next infrastructure apply. Keep public DNS on Fly.
-5. Dispatch bootstrap operation `verify` in a **new run** for staging. It observes
-   the activated revision/template/digest/count and probes the approved HTTPS
-   origin by connecting directly to the ALB with Host, TLS name and certificate
-   verification preserved. Then verify production with the same retained build,
-   using staging's verified receipt. This creates the first verified receipts;
-   registration records are never accepted as deployment proof.
-6. Only after both verify runs succeed, approve setting `DOCS_AWS_ENABLED=true`.
-   Subsequent trusted main builds automatically stage candidates. Public DNS
-   changes remain a separate infrastructure operation requiring approval.
+1. Apply infrastructure with services disabled to create repositories, current
+   configuration objects and OIDC roles. Keep public DNS on Fly. Configure the
+   secrets and environments above, leaving ordinary delivery disabled.
+2. Dispatch `operation: bootstrap` on main. After both images pass, the jobs
+   register their bootstrap revisions. Retrieve the resulting task definition ARNs
+   privately from ECS, matching family, image digest and workflow timing. Public
+   job outputs and summaries do not expose registration ARNs.
+3. Explicitly enable services with those registered revisions in the second
+   infrastructure apply. Keep public DNS on Fly.
+4. Dispatch recovery for staging using the bootstrap build tag, then production
+   with its required approval. These runs use the current configuration and check
+   the requested task revision, running image digest, one-task counts and HTTP
+   behavior before and after probes. They can register a new revision of the same
+   image; no old registration record is a prerequisite.
+5. Privately confirm environment protection, OIDC scope, successful and failed-job
+   reruns, ECS rollback rejection, routing, notifications and independent failure
+   alerts before approving `DOCS_AWS_ENABLED=true`. Preserve the separate DNS
+   approval and seven-day observation period with Fly available as fallback.
 
-All staging actions share non-canceling concurrency group `docs-staging`;
-production promotion, rollback, bootstrap and Fly recovery share
-`docs-production`. Coordinate contract changes by pausing release activity and
-waiting for active/queued jobs to finish before applying infrastructure. GitHub
-concurrency may replace pending jobs even with cancellation disabled; re-dispatch
-a superseded candidate if still appropriate. The active service's verified source
-is the freshness authority, rather than workflow run ordering.
+## Rollout, recovery and limits
 
-## Promotion and retained recovery
+Official pinned actions handle credentials, ECR login and image rendering. The
+private CLI adapter registers the rendered JSON unchanged, records the requested
+revision immediately, updates only the service task definition and invokes
+[AWS CLI services-stable](https://docs.aws.amazon.com/cli/latest/reference/ecs/wait/services-stable.html).
+That built-in waiter polls every 15 seconds and fails after 40 unsuccessful
+checks: about ten minutes plus API request/retry time, within the 30-minute
+deployment job. The command has a separate 25-minute process limit. No custom
+polling or restoration loop is used. The waiter can succeed after ECS rolls back
+to an older revision; subsequent revision and digest checks reject that outcome.
+Stability alone never means successful delivery. Native ECS circuit-breaker
+rollback remains enabled.
 
-**Release Docs** automatically stages candidates only after a successful trusted main **push**
-producer and when automatic delivery is enabled. Manual build runs never auto-stage,
-so bootstrap cannot accidentally start a normal deployment before prior receipts
-exist. Its candidate-ready message requires ECS,
-digest and semantic HTTP checks to pass. A successful build alone is not ready.
+HTTP failure fails the release and requests operator recovery; the application
+scripts never restore a prior task or issue another service update.
 
-Dispatch **Release Docs** on protected main with operation `promote`, environment
-`production`, and the successful build
-`producer_run` and `producer_attempt`. The protected production environment asks
-for human approval. After approval and lock acquisition, validation is repeated;
-no image is rebuilt. A candidate behind or divergent from the currently deployed
-verified source is rejected, including an older queued candidate overtaken by a
-newer production release. Identical/ahead sources are eligible after all other
-checks pass.
+HTTP checks connect directly to the approved ALB while preserving the origin Host,
+TLS server name, certificate verification and IPv4/IPv6 lookup behavior. Identity
+and one-task counts are observed before and after HTTP probes. This cannot make
+service mutation atomic. Staging jobs share non-canceling `docs-staging`
+concurrency; AWS production and Fly recovery share `docs-production`. GitHub may
+replace pending jobs even when cancellation is disabled; reject obsolete approvals
+and re-dispatch a retained candidate deliberately when needed.
 
-The release program discovers recent successful permitted release runs through the
-GitHub API (up to 20 from `release-docs.yml`), derives only their permitted exact
-receipt keys, and pins each returned version/hash. For forward promotion, the
-current receipt must match the actual healthy service revision and image. A
-bounded search that finds no matching
-proof fails closed. `previous_run` and `staging_run` accept optional exact
-`run-id/attempt` references for retained evidence outside that window; they still
-require authenticated permitted main release runs and verified receipts.
+Release summaries go to the configured SNS release topic. A production failure
+also attempts the alert topic even if summary delivery fails. Notification failure
+is a separate warning and step outcome; it does not overwrite deployment/check
+health or create a prerequisite for the next release. Delivery remains best effort:
+runner loss, preparation failure or missing topic configuration can prevent it.
+Do not rely on notifications alone to detect a failed run.
 
-For deliberate rollback, dispatch **Release Docs** with operation `rollback` on protected
-main. Choose `production` (the default) or `staging`, supply the retained build
-`producer_run`/`producer_attempt`, and set required `rollback_run` to the verified
-target release's `run-id/attempt` in the selected environment. The target receipt
-may describe a historical contract; the retained image is rendered with the
-current approved task template. No image is rebuilt.
+Operational inputs are masked before AWS actions. Configuration, templates and
+check results stay under `RUNNER_TEMP/docs-private`, with owner-only permissions;
+none are uploaded. These files are ephemeral on hosted runners. Rendered-file and
+registered-revision step outputs remain within the deployment job; the only cross-job output is the
+source-derived image tag. Keep debug disabled and inspect infrastructure diagnostics
+through private operator tools.
 
-Explicit rollback can replace a failed, unverified or in-progress current
-revision. It captures the actual service task revision and rechecks that pointer
-immediately before updating; a different intervening revision aborts the update.
-This check is not an atomic AWS compare-and-swap. Keep other service mutations
-serialized through the protected environment's non-canceling concurrency group.
-The failed starting revision is never an automatic restoration target during
-explicit recovery. A failed recovery remains nonzero and requires operator action.
-Normal promotion still requires a verified healthy current source and rejects
-stale or divergent candidates; only deliberate rollback bypasses freshness.
+Retain at least 30 days of promoted images and always keep current and previous
+releases. This change adds no automatic deletion. The accepted mixed-release asset
+limitation remains: clients holding an older page can request assets from a newer
+single-task deployment. Treat it as a rollout constraint when diagnosing failures.
 
-Production rollback still requires proof for the exact retained manifest and
-staging image under the **current approved staging contract**. If staging runs a
-newer image or the staging contract changed, first dispatch rollback with
-`environment: staging`, the retained build, and `rollback_run` naming that image's
-verified historical **staging** receipt. After the staging recovery passes ECS,
-digest and semantic HTTP checks, dispatch production rollback using the same
-build, its verified historical **production** `rollback_run`, and `staging_run`
-set to the successful staging recovery's exact `run-id/attempt`. Staging rollback
-uses `docs-staging` approval and serialization; production uses `docs-production`.
-Both require the configured protected environment and current approved contract.
-
-Private receipt check details retain bounded failure stage/reason codes for
-validation, rollout, template incompatibility and other failures. Preparation
-failures before a receipt exists save bounded diagnostics in the runner's private
-local output directory. These files are not published as workflow artifacts;
-public logs contain only a sanitized failure message.
-
-Retain immutable images, manifests and receipts for at least 30 days and always
-retain current/previous releases. Do not garbage-collect them while referenced.
-Before retiring automatic Fly release, privately record a known-good retained
+Before retiring automatic Fly delivery, privately retain a known-good immutable
 `registry.fly.io/openprose-docs@sha256:<digest>` image. **Recover Docs on Fly.io**
-is dispatch-only on protected main, takes production approval, validates that
-exact registry/application digest, and deploys it without rebuilding. While DNS
-still resolves to Fly, the live robots check observes Fly. After the DNS switch,
-verify Fly separately through an approved direct target before any DNS recovery;
-the public-host robots check alone is not proof of Fly health. No workflow here
-changes DNS.
+remains dispatch-only on protected main with production approval and no rebuild.
+Before the DNS switch its public robots check observes Fly. Afterward verify Fly
+through an approved direct target before a DNS recovery; the public-host check
+alone does not prove Fly health. No workflow here changes DNS.
 
-## Diagnostics, retention and limits
-
-The release program uses Node, the installed AWS CLI and the installed `tsx`
-HTTP checker. Terraform owns every task-template field except the immutable image
-substituted by the workflow. Candidate JSON cannot authorize its own producer,
-source, checks, contract, routing or destination. Strict validation rejects unknown
-record fields. The program checks the current contract immediately before each
-mutation and after verification. Pause releases during contract changes; ECS
-service updates offer no atomic compare-and-swap.
-
-A failed promotion remains nonzero after successful automatic restoration.
-Restoration requires a compatible previously verified task and ownership of the
-active service pointer, followed by ECS and HTTP verification. Explicit rollback
-never automatically restores its failed starting revision. HTTP checks connect to
-the approved ALB while retaining the public Host, TLS server name and certificate
-verification. Running task revision, digest and counts are checked before and
-after HTTP probes, beyond ECS stability alone.
-
-Receipts use immutable conditional writes under
-`receipts/<environment>/<release-run>/<attempt>.json`. Registration-only records
-have `kind: "registration"` and cannot serve as deployment receipts. Notification,
-alert or receipt-delivery failures are independent nonzero outcomes; they never
-rewrite application health. Private files under the runner's `docs-private`
-directory retain bounded failure details and delivery-failure records, but hosted
-runner files are ephemeral. Repair delivery and run fresh verification to establish
-new immutable evidence. No mutable current-release pointer or S3 listing is used.
-
-Run local release checks with `node --test scripts/release/*.test.mjs` and HTTP
-fixtures with `pnpm exec vitest run __tests__/http-surface.test.ts`. These offline
-checks do not prove configured environment protection, OIDC trust, live rollout,
-HTTP routing or notification delivery. Actual retained-image smoke evidence applies
-only while image build behavior remains unchanged; hosted release proof requires
-an approved live run.
+Run `pnpm test:release` for offline release tests. Source tests, mocked action
+exercises and local container checks do not establish live IAM permissions,
+environment approval enforcement, hosted logs, ECS rollout, DNS or SNS delivery.
+Those require separately approved activation checks.

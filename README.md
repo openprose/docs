@@ -66,8 +66,10 @@ legacy storage leaves the current SDK capture policy in place. The previous toke
 is checked as supplied, without guessing it from the new token. Merging this
 change stops automatic Fly releases while leaving the running Fly service
 untouched. AWS delivery is disabled until explicitly configured and
-enabled. Production promotion and Fly recovery require approved retained images;
-see [Deployment](docs/DEPLOYMENT.md) for setup, bootstrap and recovery.
+enabled. Production delivery and Fly recovery use approved retained images;
+see [Deployment](docs/DEPLOYMENT.md) for the release, bootstrap and retained-image
+recovery operations. Staging verification precedes protected production approval;
+recovery uses the selected retained tag with current task configuration.
 
 The single client link observer emits `site:link_click` for the public Docs and
 language repositories, their linked source references, and the examples

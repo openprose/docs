@@ -1,544 +1,349 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createHash } from 'node:crypto';
-import { canRestorePrevious, formatReleaseNotification, loadCandidate, matchesStaging, prepareRelease, runRelease, verifyDeployment } from './release.mjs';
-import { createAws } from './artifacts.mjs';
+import { spawnSync } from 'node:child_process';
+import * as release from './release.mjs';
 import { digest, fixture, observation, oldDigest, previousTaskArn, taskArn } from './fixtures.mjs';
-async function setup(t, scenario = {}) {
-  const dir = await mkdtemp(join(tmpdir(), 'docs-release-test-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const f = fixture();
-  if (scenario.rollback)
-    f.manifest.images.staging.digest = oldDigest;
-  if (scenario.trusted) {
-    f.manifest.producer = { repository: 'openprose/docs', workflowRef: 'openprose/docs/.github/workflows/build-docs.yml@refs/heads/main', runId: '100', runAttempt: '1' };
-    f.manifest.checks = { runId: '100', conclusion: 'success' };
-    f.evidence.producer = f.manifest.producer; f.evidence.checks = f.manifest.checks;
-  }
-  const objects = new Map();
-  const put = (key, value) => { const bytes = JSON.stringify(value); objects.set(key, bytes); return { key, versionId: 'v1', sha256: createHash('sha256').update(bytes).digest('hex') }; };
-  const config = {
-    bucket: 'synthetic-release-fixture',
-    manifest: put('builds/100/1/manifest.json', f.manifest),
-    contract: put('contracts/staging/current.json', f.contract),
-    evidence: {
-      environment: f.evidence.environment,
-      repositoryUrl: f.evidence.repositoryUrl,
-      sourceSha: f.evidence.sourceSha,
-      producer: f.evidence.producer,
-      checks: f.evidence.checks
-    },
-    release: { runId: '200', runAttempt: '1' },
-    probeConnectHost: 'synthetic-123.us-east-1.elb.amazonaws.com',
-    concurrencyGroup: 'docs-staging',
-    timeoutSeconds: 1,
-    pollIntervalMs: 1
-  };
-  const initialArn = scenario.rollback ? taskArn : previousTaskArn;
-  config.previousReceipt = put('receipts/staging/90/1.json', {
-    schemaVersion: 1,
-    environment: 'staging',
-    manifest: { key: 'builds/90/1/manifest.json', versionId: 'old-manifest-version', sha256: 'f'.repeat(64) },
-    contract: scenario.incompatiblePrevious ? { ...config.contract, versionId: 'old-contract-version' } : config.contract,
-    sourceSha: 'e'.repeat(40),
-    previousTaskArn: null,
-    requestedTaskArn: initialArn,
-    observedTaskArn: initialArn,
-    observedImageDigest: scenario.rollback ? digest : oldDigest,
-    result: 'verified',
-    checks: [{ name: 'http surface', ok: true }],
-    timestamp: '2026-10-26T00:00:00.000Z'
-  });
-  let current = initialArn, updated = false;
-  const mutations = [], receipts = [];
-  let notices = 0;
-  const runner = async (file, args) => {
-    assert.equal(file, 'aws');
-    assert.ok(args.includes('--no-cli-pager'));
-    const [service, operation] = args;
-    const get = name => args[args.indexOf(name) + 1];
-    if (service === 's3api' && operation === 'get-object') {
-      const key = get('--key');
-      let body = objects.get(key);
-      if (scenario.replaced && updated === false && key.startsWith('contracts/') && !args.includes('--version-id'))
-        body += ' ';
-      await writeFile(args.at(-1), body);
-      return { stdout: JSON.stringify({ VersionId: 'v1' }) };
-    }
-    if (service === 's3api' && operation === 'put-object') {
-      if (scenario.receiptFailure)
-        throw new Error('private bucket identifier');
-      assert.equal(get('--if-none-match'), '*');
-      assert.equal(get('--key'), `receipts/${config.evidence.environment}/${scenario.recovering ? '201' : config.release.runId}/${config.release.runAttempt}.json`);
-      receipts.push(JSON.parse(await readFile(get('--body'), 'utf8')));
-      return { stdout: '{"VersionId":"receipt-v1"}' };
-    }
-    if (service === 'sns') {
-      notices++;
-      if (scenario.notificationFailure)
-        throw new Error('private topic identifier');
-      return { stdout: '{}' };
-    }
-    if (operation === 'register-task-definition') {
-      if (scenario.registrationFailure)
-        throw new Error('private registration failure');
-      mutations.push(operation);
-      if (scenario.recovering) scenario.recoveryRegistered = true;
-      const task = JSON.parse(await readFile(get('--cli-input-json').slice(7), 'utf8'));
-      assert.equal(task.containerDefinitions[0].stopTimeout, 30);
-      assert.equal(task.containerDefinitions[0].image, `${f.contract.repositoryUrl}@${scenario.recovering ? oldDigest : f.manifest.images.staging.digest}`);
-      return { stdout: JSON.stringify({ taskDefinition: { taskDefinitionArn: scenario.rollback || scenario.recovering ? taskArn.replace(':2', ':3') : taskArn } }) };
-    }
-    if (operation === 'update-service') {
-      mutations.push(operation);
-      current = get('--task-definition');
-      updated = true;
-      if (scenario.partial && current === taskArn)
-        throw new Error('lost update response');
-      return { stdout: '{}' };
-    }
-    if (operation === 'describe-services') {
-      let primary = current;
-      if (scenario.recovering && scenario.recoveryRegistered && scenario.beforeUpdateReplacement) primary = taskArn.replace(':2', ':4');
-      if (updated && scenario.intervening)
-        primary = taskArn.replace(':2', ':3');
-      const failed = primary === taskArn && (scenario.timeout || scenario.partial || scenario.unhealthyCurrent);
-      return {
-        stdout: JSON.stringify({
-          services: [{
-            serviceArn: f.contract.serviceArn,
-            taskDefinition: primary,
-            desiredCount: 1,
-            runningCount: 1,
-            pendingCount: 0,
-            deployments: [{
-              id: 'ecs-svc/1',
-              status: 'PRIMARY',
-              taskDefinition: primary,
-              rolloutState: failed ? 'IN_PROGRESS' : 'COMPLETED'
-            }]
-          }],
-          failures: []
-        })
-      };
-    }
-    if (operation === 'list-tasks') {
-      assert.equal(get('--service-name'), 'docs-staging');
-      return { stdout: '{"taskArns":["arn:synthetic:task"]}' };
-    }
-    if (operation === 'describe-tasks')
-      return {
-        stdout: JSON.stringify({
-          tasks: [{
-            taskDefinitionArn: current,
-            containers: [{ name: 'docs', imageDigest: current === taskArn ? digest : oldDigest }]
-          }],
-          failures: []
-        })
-      };
-    if (operation === 'describe-task-definition') {
-      const td = structuredClone(f.contract.taskTemplate);
-      const arn = get('--task-definition');
-      if (scenario.logResponse)
-        Object.assign(td.containerDefinitions[0].logConfiguration, scenario.logResponse);
-      if (scenario.incompatiblePrevious && arn === previousTaskArn)
-        td.containerDefinitions[0].stopTimeout = 20;
-      if (scenario.privilegedPrevious && arn === previousTaskArn)
-        td.pidMode = 'host';
-      td.containerDefinitions[0].image = `${f.contract.repositoryUrl}@${arn === taskArn ? digest : oldDigest}`;
-      return { stdout: JSON.stringify({ taskDefinition: { ...td, taskDefinitionArn: arn } }) };
-    }
-    throw new Error(`Unexpected fake command ${service} ${operation}`);
-  };
-  const aws = createAws({ run: runner });
-  let now = 0;
-  const deps = {
-    aws,
-    outputDir: dir,
-    probe: async () => [{ name: 'http surface', ok: !scenario.probeFailure || current === previousTaskArn }],
-    now: () => { now += 200; return now; },
-    sleep: async () => { }
-  };
-  return { config, deps, mutations, receipts, dir, put, fixture: f, get notices() { return notices; } };
+const imageTag = `${'d'.repeat(40)}-100-2`;
+const config = { bucket: 'synthetic-release-fixture', contracts: { staging: { key: 'contracts/staging/current.json' } }, probeConnectHost: 'synthetic-123.us-east-1.elb.amazonaws.com' };
+function available(name) { assert.equal(typeof release[name], 'function', `${name} must support the managed-action flow`); }
+async function objects(t, contract = fixture().contract) {
+  const dir = await mkdtemp(join(tmpdir(), 'docs-current-')); t.after(() => rm(dir, { recursive: true, force: true }));
+  const calls = [];
+  const aws = async args => { calls.push(args); assert.deepEqual(args.slice(0, 2), ['s3api', 'get-object']); await writeFile(args.at(-1), JSON.stringify(contract)); return {}; };
+  return { aws, calls, dir };
 }
-test('authenticated pinned objects become one verified release and immutable receipt', async (t) => {
-  const f = await setup(t);
-  const result = await runRelease('deploy', f.config, f.deps);
-  assert.equal(result.exitCode, 0);
-  assert.equal(result.receipt.result, 'verified');
-  assert.equal(result.receipt.observedTaskArn, taskArn);
-  assert.equal(f.receipts.length, 1);
-  assert.deepEqual(f.mutations, ['register-task-definition', 'update-service']);
+test('current configuration is read by key without a version or hash and preserves new Terraform settings', async t => {
+  available('loadContract'); const contract = fixture().contract;
+  contract.taskTemplate.ephemeralStorage = { sizeInGiB: 25 };
+  contract.taskTemplate.containerDefinitions[0].readonlyRootFilesystem = false;
+  const f = await objects(t, contract);
+  const result = await release.loadContract({ aws: f.aws, config, environment: 'staging' });
+  assert.deepEqual(result, contract); assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].includes('--version-id'), false);
+  assert.equal(f.calls[0][f.calls[0].indexOf('--key') + 1], config.contracts.staging.key);
 });
-test('replaced current contracts block all ECS writes', async (t) => {
-  const f = await setup(t, { replaced: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.result, 'failed');
-  assert.deepEqual(f.mutations, []);
+for (const [label, change] of [
+  ['environment', c => { c.environment = 'production'; }],
+  ['account', c => { c.repositoryUrl = c.repositoryUrl.replace('123456789012', '999999999999'); }],
+  ['region', c => { c.serviceArn = c.serviceArn.replace('us-east-1', 'us-west-2'); }],
+  ['family', c => { c.taskTemplate.family = 'docs-production'; }],
+  ['task role', c => { c.taskTemplate.taskRoleArn = c.taskTemplate.taskRoleArn.replace('123456789012', '999999999999'); }],
+  ['ambiguous image', c => { c.taskTemplate.containerDefinitions.push(structuredClone(c.taskTemplate.containerDefinitions[0])); }],
+  ['missing placeholder', c => { c.taskTemplate.containerDefinitions[0].image = 'unapproved:latest'; }],
+]) test(`rejects wrong ${label}`, async t => {
+  available('loadContract'); const c = fixture().contract; change(c); const f = await objects(t, c);
+  await assert.rejects(release.loadContract({ aws: f.aws, config, environment: 'staging' }));
 });
-for (const scenario of [{ timeout: true }, { partial: true }, { probeFailure: true }])
-  test(`failed promotion recovers previous task and remains failed in CI: ${JSON.stringify(scenario)}`, async (t) => {
-    const f = await setup(t, scenario);
-    const r = await runRelease('deploy', f.config, f.deps);
-    assert.equal(r.exitCode, 1);
-    assert.equal(r.receipt.result, 'rolled_back');
-    assert.equal(r.receipt.observedTaskArn, previousTaskArn);
-    assert.equal(f.mutations.at(-1), 'update-service');
-  });
-test('an intervening deployment prevents restoration', async (t) => {
-  const f = await setup(t, { intervening: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.result, 'failed');
-  assert.equal(f.mutations.filter(m => m === 'update-service').length, 1);
+test('wrong configuration key rejects before any cloud read', async () => {
+  available('loadContract'); let calls = 0;
+  await assert.rejects(release.loadContract({ aws: async () => { calls++; }, config: { ...config, contracts: { staging: { key: 'contracts/production/current.json' } } }, environment: 'staging' }));
+  assert.equal(calls, 0);
 });
-test('receipt persistence failure retains a local receipt and fails CI', async (t) => {
-  const f = await setup(t, { receiptFailure: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.result, 'verified');
-  assert.ok(r.receipt.checks.some(c => c.name === 'receipt persisted' && !c.ok));
-  assert.ok(await readFile(join(f.dir, 'receipt.json'), 'utf8'));
+test('retained tag resolves once only in the selected repository, without health or receipt prerequisites', async () => {
+  available('resolveImage'); const { contract } = fixture(); const calls = [];
+  const image = await release.resolveImage({ contract, imageTag, aws: async args => { calls.push(args); return { imageDetails: [{ imageDigest: oldDigest }] }; } });
+  assert.equal(image, `${contract.repositoryUrl}@${oldDigest}`);
+  assert.equal(calls.length, 1); assert.deepEqual(calls[0].slice(0, 2), ['ecr', 'describe-images']);
+  assert.ok(calls[0].includes('docs-staging')); assert.ok(calls[0].includes(`imageTag=${imageTag}`));
 });
-test('notification failure is separate from application health and retained in receipt', async (t) => {
-  const f = await setup(t, { notificationFailure: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.result, 'verified');
-  assert.ok(f.receipts[0].checks.some(c => c.name === 'notification delivered' && !c.ok));
+for (const returned of [{ imageDetails: [] }, { imageDetails: [{ imageDigest: 'sha256:bad' }] }, { imageDetails: [{ imageDigest: digest }, { imageDigest: oldDigest }] }]) test('unknown or ambiguous immutable image rejects', async () => {
+  available('resolveImage'); await assert.rejects(release.resolveImage({ contract: fixture().contract, imageTag, aws: async () => returned }));
 });
-test('register-only bootstrap never updates the service or claims verified deployment', async (t) => {
-  const f = await setup(t);
-  const r = await runRelease('deploy', { ...f.config, registerOnly: true }, f.deps);
-  assert.equal(r.exitCode, 0);
-  assert.equal(r.receipt, null);
-  assert.equal(r.registration.kind, 'registration');
-  assert.ok(!('result' in r.registration));
-  assert.deepEqual(f.mutations, ['register-task-definition']);
-});
-test('pinned hash/version failures reject candidate before registration', async (t) => {
-  const f = await setup(t);
-  f.config.manifest.sha256 = '0'.repeat(64);
-  await assert.rejects(loadCandidate(f.config, f.deps));
-  assert.deepEqual(f.mutations, []);
-});
-test('explicit rollback pins prior verified release and uses current receipt key', async (t) => {
-  const f = await setup(t, { rollback: true });
-  const prior = {
-    schemaVersion: 1,
-    environment: 'staging',
-    manifest: f.config.manifest,
-    contract: f.config.contract,
-    sourceSha: f.config.evidence.sourceSha,
-    previousTaskArn: null,
-    requestedTaskArn: previousTaskArn,
-    observedTaskArn: previousTaskArn,
-    observedImageDigest: oldDigest,
-    result: 'verified',
-    checks: [{ name: 'HTTP', ok: true }],
-    timestamp: '2026-10-27T00:00:00.000Z'
-  };
-  f.config.rollbackReceipt = f.put('receipts/staging/101/1.json', prior);
-  f.config.observedTaskArn = taskArn;
-  const r = await runRelease('rollback', f.config, f.deps);
-  assert.equal(r.exitCode, 0);
-  assert.equal(r.receipt.result, 'verified');
-  assert.equal(r.receipt.requestedTaskArn, taskArn.replace(':2', ':3'));
-  assert.deepEqual(f.mutations, ['register-task-definition', 'update-service']);
-  const notice = formatReleaseNotification(r.receipt);
-  assert.equal(notice.version, '1.0');
-  assert.equal(notice.source, 'custom');
-  assert.match(notice.content.description, /verified/);
-  assert.ok(!notice.content.description.includes('123456789012'));
-});
-test('bootstrap production authenticates candidate without requiring deployed staging proof', async (t) => {
-  const f = await setup(t);
-  const production = fixture('production');
-  f.config.contract = f.put('contracts/production/current.json', production.contract);
-  f.config.evidence = {
-    environment: 'production',
-    repositoryUrl: production.contract.repositoryUrl,
-    sourceSha: production.manifest.sourceSha,
-    producer: production.manifest.producer,
-    checks: production.manifest.checks
-  };
-  f.config.concurrencyGroup = 'docs-production';
-  f.config.registerOnly = true;
-  delete f.config.previousReceipt;
-  const c = await loadCandidate(f.config, f.deps);
-  assert.equal(c.candidate.digest, oldDigest);
-});
-test('stable ECS with failed semantic receipt cannot authorize promotion', async (t) => {
-  const f = await setup(t);
-  f.config.previousReceipt = f.put('receipts/staging/90/1.json', {
-    schemaVersion: 1,
-    environment: 'staging',
-    manifest: f.config.manifest,
-    contract: f.config.contract,
-    sourceSha: f.config.evidence.sourceSha,
-    previousTaskArn: null,
-    requestedTaskArn: previousTaskArn,
-    observedTaskArn: previousTaskArn,
-    observedImageDigest: oldDigest,
-    result: 'failed',
-    checks: [{ name: 'http surface', ok: false }],
-    timestamp: '2026-10-26T00:00:00.000Z'
-  });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.deepEqual(f.mutations, []);
-});
-test('failed recovery HTTP probes keep the release failed', async (t) => {
-  const f = await setup(t, { timeout: true });
-  f.deps.probe = async () => [{ name: 'http surface', ok: false }];
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.receipt.result, 'failed');
-  assert.ok(r.receipt.checks.some(c => c.name === 'previous revision recovered' && !c.ok));
-});
-test('verify-only observes activated bootstrap without registration or service changes', async (t) => {
-  const f = await setup(t, { rollback: true });
-  delete f.config.previousReceipt;
-  f.config.verifyOnly = true;
-  // The currently activated revision runs the first candidate digest.
-  const current = fixture().manifest;
-  f.config.manifest = f.put('builds/100/1/manifest.json', current);
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 0);
-  assert.equal(r.receipt.result, 'verified');
-  assert.deepEqual(f.mutations, []);
-});
-for (const timeout of [false, true])
-  test(`contract upgrade accepts historical receipt but forbids incompatible automatic restore: ${timeout}`, async (t) => {
-    const f = await setup(t, { incompatiblePrevious: true, timeout });
-    const r = await runRelease('deploy', f.config, f.deps);
-    assert.equal(r.receipt.result, timeout ? 'failed' : 'verified');
-    assert.equal(f.mutations.filter(m => m === 'update-service').length, 1);
-  });
-test('registration failure retains a nullable honest requested revision', async (t) => {
-  const f = await setup(t, { registrationFailure: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.requestedTaskArn, null);
-  assert.equal(r.receipt.observedTaskArn, previousTaskArn);
-  assert.deepEqual(f.mutations, []);
-});
-test('unexpected task-level settings block automatic restore', async (t) => {
-  const f = await setup(t, { timeout: true, privilegedPrevious: true });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.receipt.result, 'failed');
-  assert.equal(f.mutations.filter(m => m === 'update-service').length, 1);
-});
-
-test('failed deployment summary does not suppress the independent recovery alert', async t => {
-  const f = await setup(t, { timeout: true, privilegedPrevious: true, notificationFailure: true });
-  f.config.alertsTopicArn = 'arn:aws:sns:us-east-1:123456789012:synthetic-alerts';
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(f.notices, 2);
-  assert.ok(r.receipt.checks.some(c => c.name === 'recovery alert delivered' && !c.ok));
-});
-
-for (const [label, logResponse, accepted] of [
-  ['empty AWS secret options', { secretOptions: [] }, true],
-  ['nonempty secret options', { secretOptions: [{ name: 'token', valueFrom: 'synthetic-secret' }] }, false],
-  ['unknown empty log settings', { unexpectedOptions: [] }, false],
-  ['changed contract-owned options', { options: { 'awslogs-group': '/ecs/other' } }, false],
-]) test(`bootstrap verification normalizes only permitted nested defaults: ${label}`, async t => {
-  const f = await setup(t, { rollback: true, logResponse });
-  delete f.config.previousReceipt;
-  f.config.verifyOnly = true;
-  f.config.manifest = f.put('builds/100/1/manifest.json', fixture().manifest);
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, accepted ? 0 : 1);
-  assert.equal(r.receipt.result, accepted ? 'verified' : 'failed');
-  assert.deepEqual(f.mutations, []);
-});
-
-test('automatic recovery accepts the permitted empty nested AWS default', async t => {
-  const f = await setup(t, { timeout: true, logResponse: { secretOptions: [] } });
-  const r = await runRelease('deploy', f.config, f.deps);
-  assert.equal(r.exitCode, 1);
-  assert.equal(r.receipt.result, 'rolled_back');
-  assert.equal(r.receipt.observedTaskArn, previousTaskArn);
-  assert.equal(f.mutations.filter(m => m === 'update-service').length, 2);
-});
-
-for (const recovery of ['verified', 'intervening', 'http_failed']) test(`failed candidate with refused auto-restore permits explicit current-template recovery: ${recovery}`, async t => {
-  const intervening = recovery === 'intervening';
-  const scenario = { incompatiblePrevious: true, timeout: true, trusted: true };
-  const f = await setup(t, scenario);
-  const retainedManifest = structuredClone(f.fixture.manifest);
-  retainedManifest.images.staging.digest = oldDigest;
-  const retainedRef = f.put('builds/100/1/manifest.json', retainedManifest);
-  // Preserve the candidate bytes until the failed forward deployment is complete.
-  f.config.manifest = f.put('builds/101/1/manifest.json', { ...f.fixture.manifest, producer: { ...f.fixture.manifest.producer, runId: '101' } });
-  f.config.evidence.producer = { ...f.fixture.manifest.producer, runId: '101' };
-  const failed = await runRelease('deploy', f.config, f.deps);
-  assert.equal(failed.exitCode, 1);
-  assert.equal(failed.receipt.result, 'failed');
-  assert.equal(failed.receipt.observedTaskArn, taskArn);
-  assert.equal(f.mutations.filter(m => m === 'update-service').length, 1);
-  const checkFailureCodes = () => {
-    assert.match(failed.receipt.checks.find(c => c.name === 'promotion completed').details, /stage=rollout;reason=deadline_exceeded/);
-    assert.match(failed.receipt.checks.find(c => c.name === 'previous revision recovered').details, /reason=template_incompatible/);
-  };
-  const retained = { ...failed.receipt, manifest: retainedRef, contract: { ...f.config.contract, versionId: 'historical' }, requestedTaskArn: previousTaskArn, observedTaskArn: previousTaskArn, observedImageDigest: oldDigest, result: 'verified', checks: [{ name: 'HTTP', ok: true }] };
-  f.put('receipts/staging/90/1.json', retained);
-  f.put('receipts/staging/200/1.json', failed.receipt);
-  const github = async path => {
-    const run = { id: 100, run_attempt: 1, repository: { full_name: 'openprose/docs' }, head_repository: { full_name: 'openprose/docs' }, head_branch: 'main', head_sha: retained.sourceSha, event: 'push', status: 'completed', conclusion: 'success', path: '.github/workflows/build-docs.yml' };
-    if (path === 'actions/runs/100/attempts/1') return run;
-    if (path.endsWith('/jobs?per_page=100')) return { total_count: 1, jobs: [{ name: 'verify', head_sha: run.head_sha, status: 'completed', conclusion: 'success' }] };
-    if (path === 'actions/runs/90/attempts/1') return { ...run, id: 90, event: 'workflow_dispatch', path: '.github/workflows/release-docs.yml' };
-    if (path.startsWith('actions/workflows/')) return { workflow_runs: [] };
-    throw Error('Unexpected GitHub read');
-  };
-  const options = { config: { bucket: f.config.bucket, contracts: { staging: f.config.contract }, probeConnectHost: f.config.probeConnectHost }, environment: 'staging', operation: 'rollback', producerRun: '100', producerAttempt: '1', release: { runId: '201', runAttempt: '1' }, rollbackRun: '90/1' };
-  const prepared = await prepareRelease(options, { aws: f.deps.aws, github });
-  assert.equal(prepared.observedTaskArn, taskArn);
-  assert.equal(prepared.previousReceipt, undefined);
-  scenario.recovering = true;
-  scenario.beforeUpdateReplacement = intervening;
-  if (recovery === 'http_failed') f.deps.probe = async () => [{ name: 'HTTP', ok: false }];
-  const recovered = await runRelease('rollback', prepared, f.deps);
-  assert.equal(recovered.exitCode, recovery === 'verified' ? 0 : 1, JSON.stringify(recovered.receipt));
-  checkFailureCodes();
-  assert.equal(recovered.receipt.result, recovery === 'verified' ? 'verified' : 'failed');
-  assert.equal(f.mutations.filter(m => m === 'update-service').length, intervening ? 1 : 2);
-  assert.equal(f.mutations.filter(m => m === 'register-task-definition').length, 2);
-  if (intervening) {
-    assert.equal(recovered.receipt.observedTaskArn, taskArn.replace(':2', ':4'));
-    assert.match(recovered.receipt.checks.find(c => c.name === 'promotion completed').details, /stage=update;reason=service_replaced/);
-  }
-  if (!intervening) {
-    assert.equal(recovered.receipt.observedImageDigest, oldDigest);
-    assert.equal(recovered.receipt.observedTaskArn, taskArn.replace(':2', ':3'));
-    assert.deepEqual(recovered.receipt.contract, f.config.contract);
+test('malformed tag rejects before cloud access', async () => {
+  available('resolveImage'); for (const tag of ['latest', imageTag+';bad', `${'d'.repeat(40)}-0-2`, '']) {
+    let calls = 0; await assert.rejects(release.resolveImage({ contract: fixture().contract, imageTag: tag, aws: async () => { calls++; } })); assert.equal(calls, 0);
   }
 });
-
-test('newer staging revalidates a retained older image with current contract for production recovery', async t => {
-  const scenario = { rollback: true, trusted: true, incompatiblePrevious: true };
-  const f = await setup(t, scenario);
-  const target = { schemaVersion: 1, environment: 'staging', manifest: f.config.manifest, contract: { ...f.config.contract, versionId: 'historical' }, sourceSha: f.config.evidence.sourceSha, previousTaskArn: null, requestedTaskArn: previousTaskArn, observedTaskArn: previousTaskArn, observedImageDigest: oldDigest, result: 'verified', checks: [{ name: 'HTTP', ok: true }], timestamp: '2026-10-27' };
-  f.put('receipts/staging/80/1.json', target);
-  const github = async path => {
-    const run = { id: 100, run_attempt: 1, repository: { full_name: 'openprose/docs' }, head_repository: { full_name: 'openprose/docs' }, head_branch: 'main', head_sha: target.sourceSha, event: 'push', status: 'completed', conclusion: 'success', path: '.github/workflows/build-docs.yml' };
-    if (path === 'actions/runs/100/attempts/1') return run;
-    if (path.endsWith('/jobs?per_page=100')) return { total_count: 1, jobs: [{ name: 'verify', head_sha: run.head_sha, status: 'completed', conclusion: 'success' }] };
-    if (path === 'actions/runs/80/attempts/1' || path === 'actions/runs/200/attempts/1' || path === 'actions/runs/70/attempts/1') return { ...run, id: path.includes('/80/') ? 80 : path.includes('/70/') ? 70 : 200, event: 'workflow_dispatch', path: '.github/workflows/release-docs.yml' };
-    if (path.startsWith('actions/workflows/')) return { workflow_runs: path.includes('release-docs.yml') ? [await github('actions/runs/200/attempts/1')] : [] };
-    throw Error('Unexpected GitHub read');
-  };
-  const options = { config: { bucket: f.config.bucket, contracts: { staging: f.config.contract }, probeConnectHost: f.config.probeConnectHost }, environment: 'staging', operation: 'rollback', producerRun: '100', producerAttempt: '1', release: f.config.release, rollbackRun: '80/1' };
-  const prepared = await prepareRelease(options, { aws: f.deps.aws, github });
-  const r = await runRelease('rollback', prepared, f.deps);
-  assert.equal(r.exitCode, 0);
-  assert.equal(matchesStaging(target, f.fixture.manifest, f.config.manifest, f.config.contract), false);
-  assert.equal(matchesStaging(r.receipt, f.fixture.manifest, f.config.manifest, f.config.contract), true);
-  f.put('receipts/staging/200/1.json', r.receipt);
-  const production = fixture('production');
-  const productionRef = f.put('contracts/production/current.json', production.contract);
-  const productionArn = 'arn:aws:ecs:us-east-1:123456789012:task-definition/docs-production:1';
-  f.put('receipts/production/70/1.json', { ...target, environment: 'production', contract: { ...productionRef, versionId: 'historical' }, requestedTaskArn: productionArn, observedTaskArn: productionArn });
-  const productionAws = async args => {
-    if (args[1] === 'describe-services' && args.includes(production.contract.serviceArn)) return { services: [{ serviceArn: production.contract.serviceArn, taskDefinition: productionArn }], failures: [] };
-    if (args[1] === 'describe-task-definition' && args.includes(productionArn)) return { taskDefinition: { taskDefinitionArn: productionArn, containerDefinitions: [{ image: `${production.contract.repositoryUrl}@${oldDigest}` }] } };
-    return f.deps.aws(args);
-  };
-  const productionOptions = { ...options, environment: 'production', operation: 'rollback', rollbackRun: '70/1', config: { ...options.config, contracts: { staging: f.config.contract, production: productionRef }, alertsTopicArn: 'arn:aws:sns:us-east-1:123456789012:alerts' } };
-  await assert.rejects(prepareRelease({ ...productionOptions, stagingRun: '80/1' }, { aws: productionAws, github }), /Current approved staging proof unavailable/);
-  // Automatic lookup must accept a successful staging rollback as proof too.
-  const prod = await prepareRelease(productionOptions, { aws: productionAws, github });
-  assert.equal((await loadCandidate(prod, f.deps)).candidate.digest, oldDigest);
-  assert.equal(prod.stagingReceipt.key, 'receipts/staging/200/1.json');
-  assert.deepEqual(f.mutations, ['register-task-definition', 'update-service']);
-});
-
 const expected = { taskArn, digest, desiredCount: 1 };
-test('stable old revisions and mixed or wrong image tasks cannot pass', () => {
-  assert.ok(verifyDeployment(expected, observation()).every(c => c.ok));
-  for (const observed of [observation({ primaryTaskArn: previousTaskArn }), observation({ rolloutState: 'FAILED' }), observation({ pending: 1 }), observation({ tasks: [{ taskDefinitionArn: taskArn, imageDigest: 'sha256:wrong' }] }), observation({ tasks: [] }), observation({ running: 2 })])
-    assert.ok(verifyDeployment(expected, observed).some(c => !c.ok));
+test('stable old revisions, native rollback and mixed/wrong digests fail identity checks', () => {
+  assert.ok(release.verifyDeployment(expected, observation()).every(c => c.ok));
+  for (const observed of [observation({ primaryTaskArn: previousTaskArn }), observation({ rolloutState: 'FAILED' }), observation({ pending: 1 }), observation({ tasks: [{ taskDefinitionArn: taskArn, imageDigest: oldDigest }] }), observation({ tasks: [] }), observation({ running: 2 }), observation({ tasks: [{ taskDefinitionArn: taskArn, imageDigest: digest }, { taskDefinitionArn: taskArn, imageDigest: oldDigest }] })])
+    assert.ok(release.verifyDeployment(expected, observed).some(c => !c.ok));
 });
-test('automatic restoration refuses an intervening revision or absent previous task', () => {
-  const attempt = { requestedTaskArn: taskArn, previousTaskArn };
-  assert.equal(canRestorePrevious(attempt, observation()), true);
-  assert.equal(canRestorePrevious(attempt, observation({ primaryTaskArn: taskArn.replace(':2', ':3') })), false);
-  assert.equal(canRestorePrevious({ ...attempt, previousTaskArn: null }, observation()), false);
+function observer(contract, revisions = [taskArn, taskArn]) {
+  const calls = []; let round = -1;
+  return { calls, aws: async args => {
+    calls.push(args); const op = args[1]; const revision = () => revisions[Math.min(round, revisions.length - 1)];
+    if (op === 'describe-services') { round++; return { services: [{ serviceArn: contract.serviceArn, taskDefinition: revision(), desiredCount: 1, runningCount: 1, pendingCount: 0, deployments: [{ status: 'PRIMARY', taskDefinition: revision(), rolloutState: 'COMPLETED' }] }], failures: [] }; }
+    if (op === 'list-tasks') return { taskArns: ['synthetic-running-task'] };
+    if (op === 'describe-tasks') return { tasks: [{ taskDefinitionArn: revision(), containers: [{ name: 'docs', imageDigest: digest }] }], failures: [] };
+    throw Error('Unexpected mutation or historical read');
+  } };
+}
+test('HTTP failure retains failed health with no ECS mutation; final observation detects replacement', async () => {
+  available('checkRelease'); const { contract } = fixture();
+  for (const replacement of [false, true]) {
+    const f = observer(contract, [taskArn, replacement ? previousTaskArn : taskArn]); let probed = 0;
+    const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest, probeConnectHost: config.probeConnectHost, probe: async (_c, host) => { assert.equal(host, config.probeConnectHost); probed++; return [{ name: 'HTTP fixture', ok: replacement }]; } });
+    assert.ok(checks.some(c => !c.ok)); assert.equal(probed, 1);
+    assert.deepEqual(f.calls.map(c => c[1]), ['describe-services', 'list-tasks', 'describe-tasks', 'describe-services', 'list-tasks', 'describe-tasks']);
+  }
 });
-
-test('staging proof must match current approved contract, exact manifest and observed image', () => {
-  const { manifest, evidence } = fixture();
-  const ref = { key: 'builds/100/1/manifest.json', versionId: 'one', sha256: 'a'.repeat(64) };
-  const receipt = { schemaVersion: 1, environment: 'staging', manifest: ref, contract: evidence.approvedContract, sourceSha: manifest.sourceSha, previousTaskArn: null, requestedTaskArn: 'task:2', observedTaskArn: 'task:2', observedImageDigest: manifest.images.staging.digest, result: 'verified', checks: [{ name: 'HTTP', ok: true }], timestamp: '2026-10-27' };
-  assert.equal(matchesStaging(receipt, manifest, ref, evidence.approvedContract), true);
-  for (const changed of [{ contract: { ...receipt.contract, versionId: 'replaced' } }, { manifest: { ...ref, versionId: 'replaced' } }, { checks: [{ name: 'HTTP', ok: false }] }, { observedImageDigest: 'sha256:'+'f'.repeat(64) }, { observedTaskArn: 'task:1' }, { result: 'failed' }]) assert.equal(matchesStaging({ ...receipt, ...changed }, manifest, ref, evidence.approvedContract), false);
+test('stable service on an old revision cannot pass after native rollback', async () => {
+  available('checkRelease'); const { contract } = fixture(); const f = observer(contract, [previousTaskArn]);
+  const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest, probeConnectHost: config.probeConnectHost, probe: async () => [{ name: 'HTTP', ok: true }] });
+  assert.ok(checks.some(c => !c.ok));
 });
-test('trusted preparation authenticates producer and pins current service proof before rejecting stale queued source', async () => {
-  const { prepareRelease } = await import('./release.mjs');
-  const { contract, manifest } = fixture();
-  manifest.producer = { repository: 'openprose/docs', workflowRef: 'openprose/docs/.github/workflows/build-docs.yml@refs/heads/main', runId: '100', runAttempt: '2' };
-  manifest.checks = { runId: '100', conclusion: 'success' };
-  const objects = new Map();
-  const put = (key, value) => { const bytes = JSON.stringify(value); objects.set(key, bytes); return { key, versionId: 'immutable-1', sha256: createHash('sha256').update(bytes).digest('hex') }; };
-  const contractRef = put('contracts/staging/current.json', contract);
-  const manifestRef = put('builds/100/2/manifest.json', manifest);
-  const taskArn = 'arn:aws:ecs:us-east-1:123456789012:task-definition/docs-staging:3';
-  put('receipts/staging/200/1.json', { schemaVersion: 1, environment: 'staging', manifest: { ...manifestRef, key: 'builds/99/1/manifest.json' }, contract: contractRef, sourceSha: 'e'.repeat(40), previousTaskArn: null, requestedTaskArn: taskArn, observedTaskArn: taskArn, observedImageDigest: manifest.images.staging.digest, result: 'verified', checks: [{ name: 'HTTP', ok: true }], timestamp: '2026-10-27' });
-  const run = { id: 100, run_attempt: 2, repository: { full_name: 'openprose/docs' }, head_repository: { full_name: 'openprose/docs' }, path: '.github/workflows/build-docs.yml', head_branch: 'main', head_sha: manifest.sourceSha, event: 'push', status: 'completed', conclusion: 'success' };
-  let compare = 'ahead';
-  const github = async path => {
-    if (path === 'actions/runs/100/attempts/2') return run;
-    if (path === 'actions/runs/100/attempts/2/jobs?per_page=100') return { total_count: 2, jobs: [{ name: 'checks / verify', head_sha: manifest.sourceSha, status: 'completed', conclusion: 'success' }] };
-    if (path === 'actions/runs/200/attempts/1') return { ...run, id: 200, run_attempt: 1, path: '.github/workflows/release-docs.yml', event: 'workflow_run' };
-    if (path === `compare/${'e'.repeat(40)}...${manifest.sourceSha}`) return { status: compare };
-    throw Error('Unexpected GitHub read');
-  };
-  const aws = async args => {
-    if (args[0] === 's3api' && args[1] === 'get-object') { const bytes = objects.get(args[args.indexOf('--key')+1]); assert.ok(bytes); await writeFile(args.at(-1), bytes); return { VersionId: 'immutable-1' }; }
-    if (args[1] === 'describe-services') return { services: [{ serviceArn: contract.serviceArn, taskDefinition: taskArn }], failures: [] };
-    if (args[1] === 'describe-task-definition') return { taskDefinition: { taskDefinitionArn: taskArn, containerDefinitions: [{ image: `${contract.repositoryUrl}@${manifest.images.staging.digest}` }] } };
-    throw Error('Unexpected cloud operation');
-  };
-  const options = { config: { bucket: 'private-fixture', contracts: { staging: contractRef }, probeConnectHost: 'fixture.us-east-1.elb.amazonaws.com' }, environment: 'staging', operation: 'promote', producerRun: '100', producerAttempt: '2', release: { runId: '300', runAttempt: '1' }, previousRun: '200/1' };
-  const prepared = await prepareRelease(options, { github, aws });
-  assert.deepEqual(prepared.manifest, manifestRef);
-  assert.equal(prepared.previousReceipt.key, 'receipts/staging/200/1.json');
-  assert.equal(prepared.evidence.sourceSha, manifest.sourceSha);
-  compare = 'behind';
-  await assert.rejects(prepareRelease(options, { github, aws }), /Stale/);
+test('production alerts are attempted even if summary delivery fails; health stays independent', async () => {
+  available('notifyRelease'); const { contract } = fixture('production'); const calls = [];
+  const event = { sourceSha: 'd'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', operation: 'recover', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'failure', checkOutcome: 'skipped' };
+  const result = await release.notifyRelease({ contract, alertsTopicArn: contract.releaseTopicArn.replace('docs-releases', 'docs-alerts'), event, aws: async args => { calls.push(args); throw Error('synthetic private failure'); } });
+  assert.deepEqual(result, { delivered: false }); assert.equal(calls.length, 2);
+  assert.ok(calls.every(args => args[0] === 'sns' && args[1] === 'publish'));
+  assert.equal(event.checkOutcome, 'skipped');
+  const retry = await release.notifyRelease({ contract, event: { ...event, releaseOutcome: 'success', checkOutcome: 'success' }, aws: async () => ({}) });
+  assert.deepEqual(retry, { delivered: true });
 });
-test('credential preflight fails before the action unless its unique role ID can be masked', async () => {
-  const { spawnSync } = await import('node:child_process');
-  const env = { ...process.env, DOCS_RELEASE_CONFIG: '{}', DOCS_ROLE_ARN: 'arn:aws:iam::123456789012:role/docs-build', DOCS_ROLE_ID: '' };
-  const missing = spawnSync(process.execPath, ['scripts/release/runner.mjs', 'mask'], { env, encoding: 'utf8' });
-  assert.equal(missing.status, 1);
-  const masked = spawnSync(process.execPath, ['scripts/release/runner.mjs', 'mask'], { env: { ...env, DOCS_ROLE_ID: 'AROA1234567890EXAMPLE' }, encoding: 'utf8' });
-  assert.equal(masked.status, 0);
-  assert.match(masked.stdout, /::add-mask::AROA1234567890EXAMPLE/);
+test('credential mask preflight rejects debug and masks known identifiers while leaving image tags public', async t => {
+  const f = await objects(t);
+  const env = { ...process.env, RUNNER_TEMP: f.dir, DOCS_RELEASE_CONFIG: JSON.stringify(config), DOCS_ROLE_ARN: 'arn:aws:iam::123456789012:role/docs-build', DOCS_ROLE_ID: 'AROA1234567890EXAMPLE', GITHUB_SHA: 'd'.repeat(40) };
+  for (const changed of [{ DOCS_ROLE_ID: '' }, { RUNNER_DEBUG: '1' }, { ACTIONS_STEP_DEBUG: 'true' }, { ACTIONS_RUNNER_DEBUG: 'true' }]) {
+    const r = spawnSync(process.execPath, ['scripts/release/release.mjs', 'mask'], { env: { ...env, ...changed }, encoding: 'utf8' }); assert.equal(r.status, 1); assert.doesNotMatch(r.stdout+r.stderr, /123456789012/);
+  }
+  const good = spawnSync(process.execPath, ['scripts/release/release.mjs', 'mask'], { env, encoding: 'utf8' }); assert.equal(good.status, 0);
+  assert.match(good.stdout, /::add-mask::AROA1234567890EXAMPLE/); assert.match(good.stdout, /::add-mask::123456789012/); assert.doesNotMatch(good.stdout, /::add-mask::d{40}/);
 });
-
-test('preparation failure retains bounded owner-only diagnostics without public exception text', async t => {
-  const { spawnSync } = await import('node:child_process');
-  const { mkdtemp, readFile, rm, stat } = await import('node:fs/promises');
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  const dir = await mkdtemp(join(tmpdir(), 'docs-runner-failure-'));
-  t.after(() => rm(dir, { recursive: true, force: true }));
-  const eventFile = join(dir, 'event.json');
-  await writeFile(eventFile, JSON.stringify({ inputs: { environment: 'private-untrusted-value', operation: 'rollback' } }));
-  const result = spawnSync(process.execPath, ['scripts/release/runner.mjs', 'release'], {
-    env: { ...process.env, RUNNER_TEMP: dir, DOCS_RELEASE_CONFIG: '{}', GH_TOKEN: 'synthetic-token', GITHUB_REF: 'refs/heads/main', GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_EVENT_PATH: eventFile },
-    encoding: 'utf8'
+test('CLI preparation failures are bounded private owner-only records', async t => {
+  const f = await objects(t);
+  const r = spawnSync(process.execPath, ['scripts/release/release.mjs', 'prepare-release'], { env: { ...process.env, RUNNER_TEMP: f.dir, DOCS_RELEASE_CONFIG: '{}', DOCS_ENVIRONMENT: 'private-untrusted-environment' }, encoding: 'utf8' });
+  assert.equal(r.status, 1); assert.doesNotMatch(r.stdout+r.stderr, /private-untrusted|Error:|stack/);
+  const file = join(f.dir, 'docs-private', 'failure.json'); assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { command: 'prepare-release', reason: 'rejected_or_unavailable' }); assert.equal((await stat(file)).mode & 0o777, 0o600);
+});
+test('recovery preparation uses retained image and current template, including empty settings, without health or history reads', async t => {
+  const f = await objects(t); const { contract } = fixture();
+  contract.taskTemplate.containerDefinitions[0].dockerLabels = { release: '' };
+  contract.taskTemplate.volumes = [];
+  const event = join(f.dir,'event.json'); await writeFile(event, JSON.stringify({ inputs: { operation: 'recover' } }));
+  const executable = join(f.dir,'aws'); const calls = join(f.dir,'calls.jsonl');
+  await writeFile(executable, `#!/usr/bin/env node\nconst fs = require('fs'); const args = process.argv.slice(2);fs.appendFileSync(process.env.FAKE_CALLS, JSON.stringify(args)+'\\n'); if(args[0]==='s3api' && args[1]==='get-object') {fs.writeFileSync(args[args.indexOf('--key')+2],process.env.FAKE_CONTRACT);console.log('{}');} else if(args[0]==='ecr' && args[1]==='describe-images')console.log(JSON.stringify({imageDetails:[{imageDigest:process.env.FAKE_DIGEST}]}));else process.exit(9);\n`, { mode: 0o700 });
+  const result=spawnSync(process.execPath,['scripts/release/release.mjs','prepare-release'],{env:{...process.env,PATH:`${f.dir}:${process.env.PATH}`,RUNNER_TEMP:f.dir,DOCS_RELEASE_CONFIG:JSON.stringify(config),DOCS_ENVIRONMENT:'staging',DOCS_IMAGE_TAG:imageTag,GITHUB_EVENT_PATH:event,GITHUB_OUTPUT:join(f.dir,'outputs'),FAKE_CALLS:calls,FAKE_CONTRACT:JSON.stringify(contract),FAKE_DIGEST:oldDigest},encoding:'utf8'});
+  assert.equal(result.status,0,result.stderr);
+  const masks = registeredMasks(result.stdout);
+  for (const scalar of ['512','1024','3000','true','false','production']) assert.equal(masks.includes(scalar), false);
+  for (const identifier of [contract.clusterArn, contract.serviceArn, contract.repositoryUrl, contract.taskFamily, contract.probeBaseUrl, contract.releaseTopicArn, contract.taskTemplate.taskRoleArn, contract.taskTemplate.executionRoleArn, contract.taskTemplate.containerDefinitions[0].logConfiguration.options['awslogs-group']]) assert.ok(masks.includes(identifier));
+  const commands=(await readFile(calls,'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(commands.map(c=>c.slice(0,2)),[['s3api','get-object'],['ecr','describe-images']]);
+  const state=JSON.parse(await readFile(join(f.dir,'docs-private','release.json'),'utf8'));
+  assert.equal(state.operation,'recover'); assert.equal(state.digest,oldDigest); assert.deepEqual(state.contract,contract);
+  assert.deepEqual(JSON.parse(await readFile(join(f.dir,'docs-private','task.json'),'utf8')),contract.taskTemplate);
+  assert.equal((await stat(join(f.dir,'docs-private'))).mode & 0o777,0o700);
+  assert.equal((await stat(join(f.dir,'docs-private','task.json'))).mode & 0o777,0o600);
+  const output=await readFile(join(f.dir,'outputs'),'utf8');
+  assert.deepEqual(output.trim().split('\n').map(s=>s.split('=')[0]), ['task_definition', 'image']);
+});
+async function renderedTask(t) {
+  const f = await objects(t);
+  const { contract } = fixture();
+  const task = structuredClone(contract.taskTemplate);
+  task.containerDefinitions[0].image = `${contract.repositoryUrl}@${digest}`;
+  task.containerDefinitions[0].dockerLabels = { release: '' };
+  task.ephemeralStorage = { sizeInGiB: 25 };
+  const file = join(f.dir, 'rendered.json');
+  await writeFile(file, JSON.stringify(task));
+  return { ...f, file, task, contract };
+}
+test('bootstrap registers the rendered template untouched and never updates or waits', async t => {
+  available('deployRelease');
+  const f = await renderedTask(t);
+  const calls = [];
+  let retained;
+  const result = await release.deployRelease({
+    aws: async args => {
+      calls.push(args);
+      assert.deepEqual(args.slice(0,2), ['ecs','register-task-definition']);
+      assert.deepEqual(JSON.parse(await readFile(args[args.indexOf('--cli-input-json')+1].slice(7), 'utf8')), f.task);
+      return { taskDefinition: { taskDefinitionArn: taskArn } };
+    },
+    contract: f.contract, taskDefinition: f.file, digest, registerOnly: true,
+    onRegistered: async arn => { retained = arn; }
   });
-  assert.equal(result.status, 1);
-  assert.doesNotMatch(result.stderr + result.stdout, /private-untrusted-value|Invalid release operation/);
-  const file = join(dir, 'docs-private', 'failure.json');
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), { details: 'stage=preparation;reason=rejected_or_unavailable' });
-  assert.equal((await stat(file)).mode & 0o777, 0o600);
+  assert.deepEqual(result, { taskArn });
+  assert.equal(retained, taskArn);
+  assert.equal(calls.length, 1);
+});
+test('deployment retains its requested revision before updating only taskDefinition and using the built-in waiter', async t => {
+  available('deployRelease');
+  const f = await renderedTask(t);
+  const calls = [];
+  let retained;
+  const result = await release.deployRelease({
+    aws: async args => {
+      calls.push(args);
+      if (args[1] === 'register-task-definition') return { taskDefinition: { taskDefinitionArn: taskArn } };
+      assert.equal(retained, taskArn);
+      return {};
+    },
+    contract: f.contract, taskDefinition: f.file, digest,
+    onRegistered: async arn => { retained = arn; }
+  });
+  assert.deepEqual(result, { taskArn });
+  assert.deepEqual(calls[1], ['ecs','update-service','--cluster',f.contract.clusterArn,'--service',f.contract.serviceArn,'--task-definition',taskArn]);
+  assert.deepEqual(calls[2], ['ecs','wait','services-stable','--cluster',f.contract.clusterArn,'--services',f.contract.serviceArn]);
+  assert.equal(calls.length, 3);
+});
+for (const failure of ['update-service', 'wait']) test(`requested revision survives ${failure} failure`, async t => {
+  available('deployRelease');
+  const f = await renderedTask(t);
+  let retained;
+  const calls = [];
+  await assert.rejects(release.deployRelease({
+    aws: async args => {
+      calls.push(args);
+      if (args[1] === 'register-task-definition') return { taskDefinition: { taskDefinitionArn: taskArn } };
+      if (args[1] === failure) throw Error('unknown-generated-operational-identifier');
+      return {};
+    },
+    contract: f.contract, taskDefinition: f.file, digest,
+    onRegistered: async arn => { retained = arn; }
+  }));
+  assert.equal(retained, taskArn);
+  assert.equal(calls.length, failure === 'wait' ? 3 : 2);
+});
+test('wrong rendered family or docs image rejects before registration', async t => {
+  available('deployRelease');
+  const f = await renderedTask(t);
+  for (const changed of [ { ...f.task, family: 'docs-production' }, { ...f.task, containerDefinitions: [{ name: 'docs', image: 'wrong:latest' }] } ]) {
+    await writeFile(f.file, JSON.stringify(changed));
+    let calls = 0;
+    await assert.rejects(release.deployRelease({ aws: async () => { calls++; }, contract: f.contract, taskDefinition: f.file, digest }));
+    assert.equal(calls, 0);
+  }
+});
+test('a successful CLI wait on the old release fails final identity checks and sends the failure alert', async t => {
+  available('deployRelease');
+  const f = await renderedTask(t);
+  const deployed = await release.deployRelease({
+    aws: async args => args[1] === 'register-task-definition' ? { taskDefinition: { taskDefinitionArn: taskArn } } : {},
+    contract: f.contract, taskDefinition: f.file, digest
+  });
+  const observed = observer(f.contract, [previousTaskArn]);
+  const checks = await release.checkRelease({ aws: observed.aws, contract: f.contract, taskArn: deployed.taskArn, digest, probe: async () => [{ name: 'HTTP', ok: true }] });
+  assert.ok(checks.some(c => !c.ok));
+  const topics = [];
+  await release.notifyRelease({
+    aws: async args => { topics.push(args[args.indexOf('--topic-arn')+1]); return {}; },
+    contract: fixture('production').contract,
+    alertsTopicArn: 'arn:aws:sns:us-east-1:123456789012:docs-alerts',
+    event: { operation: 'release', sourceSha: imageTag.split('-')[0], runId: '200', runAttempt: '2', environment: 'production', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'success', checkOutcome: 'failure' }
+  });
+  assert.equal(topics.length, 2);
+});
+test('CLI waiter errors with unknown operational IDs stay private and preserve the registered ARN for notification', async t => {
+  const f = await renderedTask(t);
+  const dir = join(f.dir, 'docs-private');
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(dir, { mode: 0o700 });
+  const state = { contract: f.contract, operation: 'recover', imageTag, digest };
+  await writeFile(join(dir, 'release.json'), JSON.stringify(state));
+  const unknown = '54a3538d-5555-4444-9999-ec24cecafe00';
+  const error = JSON.stringify({ state: 'FAILURE', reason: { services: [{ deployments: [{ id: 'ecs-svc/9876543210012345678' }], events: [{ id: unknown }] }] } });
+  const executable = join(f.dir, 'aws');
+  await writeFile(executable, `#!/usr/bin/env node\nconst fs=require('fs');const args=process.argv.slice(2);if(args[1]==='register-task-definition')console.log(JSON.stringify({taskDefinition:{taskDefinitionArn:process.env.FAKE_TASK_ARN}}));else if(args[1]==='update-service')console.log('{}');else if(args[1]==='wait'){process.stderr.write(process.env.FAKE_WAITER_ERROR);process.exit(255);}else if(args[0]==='sns'){fs.writeFileSync(process.env.FAKE_NOTICE,args[args.indexOf('--message')+1]);console.log('{}');}else process.exit(9);\n`, { mode: 0o700 });
+  const env = { ...process.env, PATH: `${f.dir}:${process.env.PATH}`, RUNNER_TEMP: f.dir, DOCS_TASK_DEFINITION: f.file, DOCS_REGISTER_ONLY: 'false', GITHUB_OUTPUT: join(f.dir, 'outputs'), FAKE_TASK_ARN: taskArn, FAKE_WAITER_ERROR: error, FAKE_NOTICE: join(f.dir, 'notice.json'), GITHUB_RUN_ID: '200', GITHUB_RUN_ATTEMPT: '2' };
+  const deployed = spawnSync(process.execPath, ['scripts/release/release.mjs','deploy'], { env, encoding: 'utf8' });
+  assert.equal(deployed.status, 1);
+  assert.doesNotMatch(deployed.stdout+deployed.stderr, /54a3538d|9876543210012345678/);
+  assert.match(deployed.stderr, /^Release step failed; investigate privately\.\n$/);
+  assert.match(await readFile(join(dir,'command.log'),'utf8'), new RegExp(unknown));
+  assert.equal((await stat(join(dir,'command.log'))).mode & 0o777, 0o600);
+  assert.equal(JSON.parse(await readFile(join(dir,'release.json'),'utf8')).requestedTaskArn, taskArn);
+  assert.match(await readFile(join(f.dir,'outputs'),'utf8'), new RegExp(`task_arn=${taskArn}`));
+  const notified = spawnSync(process.execPath, ['scripts/release/release.mjs','notify'], { env: { ...env, DOCS_RELEASE_OUTCOME: 'failure', DOCS_CHECK_OUTCOME: 'skipped' }, encoding: 'utf8' });
+  assert.equal(notified.status, 0, notified.stderr);
+  const notice = JSON.parse(await readFile(env.FAKE_NOTICE,'utf8'));
+  assert.ok(notice.content.description.includes(taskArn));
+  assert.match(notice.content.description, /Checks: skipped/);
+});
+function registeredMasks(stdout) {
+  return stdout.split('\n').filter(line => line.startsWith('::add-mask::')).map(line => line.slice('::add-mask::'.length).replaceAll('%0A','\n').replaceAll('%0D','\r').replaceAll('%25','%'));
+}
+function maskLikeRunner(value, masks) {
+  return masks.reduce((masked, secret) => masked.replaceAll(secret, '***'), value);
+}
+test('actual build preparation keeps scalar-collision image tags transmissible while protecting action identifiers', async t => {
+  const f = await objects(t);
+  const contracts = { staging: fixture().contract, production: fixture('production').contract };
+  const buildConfig = { ...config, contracts: { staging: { key: 'contracts/staging/current.json' }, production: { key: 'contracts/production/current.json' } } };
+  const executable = join(f.dir, 'aws');
+  await writeFile(executable, `#!/usr/bin/env node\nconst fs=require('fs');const args=process.argv.slice(2);if(args[0]!=='s3api'||args[1]!=='get-object')process.exit(9);const key=args[args.indexOf('--key')+1];fs.writeFileSync(args[args.indexOf('--key')+2],JSON.stringify(JSON.parse(process.env.FAKE_CONTRACTS)[key.split('/')[1]]));console.log('{}');\n`, { mode: 0o700 });
+  const roleArn = 'arn:aws:iam::123456789012:role/docs-build';
+  const roleId = 'AROA1234567890EXAMPLE';
+  const env = { ...process.env, PATH: `${f.dir}:${process.env.PATH}`, RUNNER_TEMP: f.dir, DOCS_RELEASE_CONFIG: JSON.stringify(buildConfig), DOCS_ROLE_ARN: roleArn, DOCS_ROLE_ID: roleId, GITHUB_OUTPUT: join(f.dir, 'outputs'), FAKE_CONTRACTS: JSON.stringify(contracts) };
+  const preflight = spawnSync(process.execPath, ['scripts/release/release.mjs','mask'], { env, encoding: 'utf8' });
+  const prepared = spawnSync(process.execPath, ['scripts/release/release.mjs','prepare-build'], { env, encoding: 'utf8' });
+  assert.equal(preflight.status, 0, preflight.stderr);
+  assert.equal(prepared.status, 0, prepared.stderr);
+  for (const contract of Object.values(contracts)) assert.equal(prepared.stdout.includes(contract.repositoryUrl), false);
+  const masks = registeredMasks(preflight.stdout + prepared.stdout);
+  const tags = [
+    `${'a'.repeat(37)}512-100-1`,
+    `${'b'.repeat(36)}1024-3000-512`,
+    `${'c'.repeat(36)}3000-512-1024`,
+    `${'a'.repeat(29)}51210243000-1024-3000`
+  ];
+  for (const tag of tags) {
+    assert.match(tag, /^[a-f0-9]{40}-[1-9][0-9]*-[1-9][0-9]*$/);
+    const masked = maskLikeRunner(tag, masks);
+    // The runner suppresses job outputs whenever its secret masker changes them.
+    const jobOutput = masked === tag ? tag : undefined;
+    assert.equal(jobOutput, tag);
+  }
+  for (const scalar of ['512','1024','3000','true','false','production']) assert.equal(masks.includes(scalar), false);
+  const registry = contracts.production.repositoryUrl.split('/')[0];
+  for (const identifier of [roleArn, roleId, '123456789012', 'docs-build', registry]) {
+    assert.ok(masks.includes(identifier));
+    assert.notEqual(maskLikeRunner(identifier, masks), identifier);
+  }
+  const preparedBuild = JSON.parse(await readFile(join(f.dir, 'docs-private', 'build.json'), 'utf8'));
+  assert.deepEqual(preparedBuild, { stagingRepository: contracts.staging.repositoryUrl, productionRepository: contracts.production.repositoryUrl });
+  assert.equal((await readFile(join(f.dir,'outputs'),'utf8')).trim(), `registry=${registry}`);
+});
+for (const scenario of [
+  { operation: 'bootstrap', releaseOutcome: 'success', checkOutcome: 'skipped' },
+  { operation: 'release', releaseOutcome: 'success', checkOutcome: 'success' },
+  { operation: 'recover', releaseOutcome: 'success', checkOutcome: 'success' },
+  { operation: 'recover', releaseOutcome: 'success', checkOutcome: 'failure' }
+]) test(`delivered ${scenario.operation} envelope renders ${scenario.checkOutcome} checks and private release identifiers`, async () => {
+  const { contract } = fixture('production');
+  const selectedTag = `${'e'.repeat(40)}-90-1`;
+  const requestedTaskArn = 'arn:aws:ecs:us-east-1:123456789012:task-definition/docs-production:9';
+  const event = { ...scenario, sourceSha: 'e'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', imageTag: selectedTag, digest: oldDigest, requestedTaskArn, rawError: 'PRIVATE-UNBOUNDED-ERROR', applicationPayload: 'PRIVATE-APPLICATION-PAYLOAD' };
+  const messages = [];
+  const options = { contract, alertsTopicArn: 'arn:aws:sns:us-east-1:123456789012:docs-alerts', event, aws: async args => { messages.push(JSON.parse(args[args.indexOf('--message')+1])); return {}; } };
+  await release.notifyRelease(options);
+  const message = messages[0];
+  assert.equal(message.version, '1.0');
+  assert.equal(message.source, 'custom');
+  for (const value of [event.sourceSha, event.runId, event.runAttempt, event.imageTag, event.digest, requestedTaskArn]) assert.ok(message.content.description.includes(value));
+  assert.match(message.content.description, new RegExp(`Operation: ${scenario.operation}`));
+  assert.match(message.content.description, /Deploy: success/);
+  assert.match(message.content.description, new RegExp(`Checks: ${scenario.checkOutcome}`));
+  if (scenario.operation === 'bootstrap') {
+    assert.match(message.content.description, /registration only/i);
+    assert.match(message.content.description, /checks not run/i);
+    assert.doesNotMatch(message.content.description, /verified|healthy|serving/i);
+  }
+  assert.equal(message.metadata.enableCustomActions, false);
+  assert.deepEqual(message.metadata.additionalContext, { serviceArn: contract.serviceArn, environment: 'production', runId: '200', runAttempt: '2' });
+  assert.equal(message.id, `docs-production-${scenario.operation}-${event.sourceSha}-200-2`);
+  assert.equal(message.metadata.threadId, undefined);
+  assert.doesNotMatch(JSON.stringify(message), /PRIVATE-UNBOUNDED-ERROR|PRIVATE-APPLICATION-PAYLOAD/);
+  await release.notifyRelease(options);
+  assert.equal(messages.at(-1).id, message.id);
+  const previousId = message.id;
+  await release.notifyRelease({ ...options, event: { ...event, runAttempt: '3' } });
+  assert.notEqual(messages.at(-1).id, previousId);
+  assert.ok(message.content.description.length < 1200);
+});
+test('notification refuses unbounded or untrusted event fields before publishing', async () => {
+  const { contract } = fixture('production');
+  const event = { sourceSha: 'd'.repeat(40), runId: '200', runAttempt: '2', environment: 'production', operation: 'release', imageTag, digest, requestedTaskArn: null, releaseOutcome: 'success', checkOutcome: 'success' };
+  for (const changed of [{ runId: '1'.repeat(5000) }, { runAttempt: '2\nraw error' }, { imageTag: 'raw application payload' }, { releaseOutcome: 'raw exception body' }]) {
+    let calls = 0;
+    await assert.rejects(release.notifyRelease({ contract, event: { ...event, ...changed }, aws: async () => { calls++; } }));
+    assert.equal(calls, 0);
+  }
 });
