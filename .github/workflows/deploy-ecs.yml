@@ -11,6 +11,9 @@ on:
       register_only:
         default: false
         type: boolean
+      verify_only:
+        default: false
+        type: boolean
 permissions:
   contents: read
   id-token: write
@@ -19,7 +22,8 @@ jobs:
     if: >-
       github.repository == 'openprose/docs' && github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
-      (inputs.environment == 'staging' || inputs.environment == 'production')
+      (inputs.environment == 'staging' ||
+       (inputs.environment == 'production' && github.event_name == 'workflow_dispatch'))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: docs-${{ inputs.environment }}
@@ -34,6 +38,8 @@ jobs:
       DOCS_ROLE_ARN: ${{ secrets.DOCS_RELEASE_ROLE_ARN }}
       DOCS_ENVIRONMENT: ${{ inputs.environment }}
       DOCS_IMAGE_TAG: ${{ inputs.image_tag }}
+      DOCS_REGISTER_ONLY: ${{ inputs.register_only }}
+      DOCS_VERIFY_ONLY: ${{ inputs.verify_only }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -58,6 +64,7 @@ jobs:
         run: node scripts/release/release.mjs prepare-release
       - uses: aws-actions/amazon-ecs-render-task-definition@8d79160660ad39c402a16e5fc7cd2a32e8f7d6b7 # v1.9.1
         id: render
+        if: ${{ !inputs.verify_only }}
         env:
           RUNNER_TEMP: ${{ runner.temp }}/docs-private
         with:
@@ -66,9 +73,9 @@ jobs:
           image: ${{ steps.prepare.outputs.image }}
       - name: Register and deploy rendered task
         id: deploy
+        if: ${{ !inputs.verify_only }}
         env:
           DOCS_TASK_DEFINITION: ${{ steps.render.outputs.task-definition }}
-          DOCS_REGISTER_ONLY: ${{ inputs.register_only }}
         run: node scripts/release/release.mjs deploy
       - name: Verify requested revision, image and HTTP surface
         id: check
@@ -77,7 +84,7 @@ jobs:
           DOCS_TASK_ARN: ${{ steps.deploy.outputs.task_arn }}
         run: node scripts/release/release.mjs check
       - name: Notify release outcome
-        if: ${{ always() && steps.prepare.outcome == 'success' }}
+        if: ${{ always() && !inputs.verify_only && steps.prepare.outcome == 'success' }}
         continue-on-error: true
         env:
           DOCS_TASK_ARN: ${{ steps.deploy.outputs.task_arn }}
