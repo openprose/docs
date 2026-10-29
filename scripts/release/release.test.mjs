@@ -63,11 +63,11 @@ test('stable old revisions, native rollback and mixed/wrong digests fail identit
   for (const observed of [observation({ primaryTaskArn: previousTaskArn }), observation({ rolloutState: 'FAILED' }), observation({ pending: 1 }), observation({ tasks: [{ taskDefinitionArn: taskArn, imageDigest: oldDigest }] }), observation({ tasks: [] }), observation({ running: 2 }), observation({ tasks: [{ taskDefinitionArn: taskArn, imageDigest: digest }, { taskDefinitionArn: taskArn, imageDigest: oldDigest }] })])
     assert.ok(release.verifyDeployment(expected, observed).some(c => !c.ok));
 });
-function observer(contract, revisions = [taskArn, taskArn]) {
+function observer(contract, revisions = [taskArn, taskArn], rolloutStates = ['COMPLETED']) {
   const calls = []; let round = -1;
   return { calls, aws: async args => {
     calls.push(args); const op = args[1]; const revision = () => revisions[Math.min(round, revisions.length - 1)];
-    if (op === 'describe-services') { round++; return { services: [{ serviceArn: contract.serviceArn, taskDefinition: revision(), desiredCount: 1, runningCount: 1, pendingCount: 0, deployments: [{ status: 'PRIMARY', taskDefinition: revision(), rolloutState: 'COMPLETED' }] }], failures: [] }; }
+    if (op === 'describe-services') { round++; return { services: [{ serviceArn: contract.serviceArn, taskDefinition: revision(), desiredCount: 1, runningCount: 1, pendingCount: 0, deployments: [{ status: 'PRIMARY', taskDefinition: revision(), rolloutState: rolloutStates[Math.min(round, rolloutStates.length - 1)] }] }], failures: [] }; }
     if (op === 'list-tasks') return { taskArns: ['synthetic-running-task'] };
     if (op === 'describe-tasks') return { tasks: [{ taskDefinitionArn: revision(), containers: [{ name: 'docs', imageDigest: digest }] }], failures: [] };
     throw Error('Unexpected mutation or historical read');
@@ -480,4 +480,73 @@ test('CLI failure before checks exist remains generic', async t => {
   assert.equal(result.stdout, '');
   assert.equal(result.stderr, 'Release step failed; investigate privately.\n');
   await assert.rejects(readFile(join(result.dir, 'checks.json')), { code: 'ENOENT' });
+});
+
+for (const verifyOnly of [false, true]) test(`${verifyOnly ? 'verify-only' : 'ordinary'} checks wait for the matching rollout before HTTP`, async () => {
+  const { contract } = fixture();
+  const f = observer(contract, [taskArn], ['IN_PROGRESS', 'IN_PROGRESS', 'COMPLETED']);
+  const waits = []; let probes = 0;
+  const check = verifyOnly ? release.checkStagedRelease : release.checkRelease;
+  const checks = await check({ aws: f.aws, contract, taskArn, digest,
+    delay: async ms => { assert.equal(probes, 0); waits.push(ms); },
+    probe: async () => { probes++; return [{ name: 'HTTP', ok: true }]; }
+  });
+  assert.ok(checks.every(c => c.ok));
+  assert.deepEqual(waits, verifyOnly ? [5000] : [5000, 5000]);
+  assert.equal(probes, 1);
+  assert.equal(f.calls.filter(c => c[1] === 'describe-services').length, 4);
+});
+test('rollout readiness exhausts twelve additional observations without retrying HTTP', async () => {
+  const { contract } = fixture();
+  const f = observer(contract, [taskArn], ['IN_PROGRESS']);
+  const waits = []; let probes = 0;
+  const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest,
+    delay: async ms => { waits.push(ms); }, probe: async () => { probes++; return [{ name: 'HTTP', ok: true }]; }
+  });
+  assert.equal(waits.length, 12);
+  assert.ok(waits.every(ms => ms === 5000));
+  assert.equal(f.calls.filter(c => c[1] === 'describe-services').length, 14);
+  assert.equal(probes, 1);
+  assert.deepEqual(checks.filter(c => !c.ok).map(c => c.name), ['before HTTP: rollout completed', 'after HTTP: rollout completed']);
+});
+test('rollout readiness never waits on wrong identity, failed state or unavailable observations', async () => {
+  const { contract } = fixture();
+  for (const scenario of ['revision', 'digest', 'counts', 'failed', 'inconsistent', 'unavailable']) {
+    const f = observer(contract, [scenario === 'revision' ? previousTaskArn : taskArn], [scenario === 'failed' ? 'FAILED' : 'IN_PROGRESS']);
+    const aws = async args => {
+      const result = await f.aws(args);
+      if (args[1] === 'describe-services') {
+        if (scenario === 'unavailable') throw Error('PRIVATE-OBSERVATION-ERROR');
+        if (scenario === 'counts') result.services[0].pendingCount = 1;
+        if (scenario === 'inconsistent') result.services[0].deployments[0].taskDefinition = previousTaskArn;
+      }
+      if (args[1] === 'describe-tasks' && scenario === 'digest') result.tasks[0].containers[0].imageDigest = oldDigest;
+      return result;
+    };
+    let waits = 0;
+    const checks = await release.checkRelease({ aws, contract, taskArn, digest, delay: async () => { waits++; }, probe: async () => [{ name: 'HTTP', ok: true }] });
+    assert.ok(checks.some(c => !c.ok), scenario);
+    assert.equal(waits, 0, scenario);
+    assert.equal(f.calls.filter(c => c[1] === 'describe-services').length, 2, scenario);
+  }
+});
+test('after-HTTP identity remains strict when a completed rollout becomes in progress', async () => {
+  const { contract } = fixture();
+  const f = observer(contract, [taskArn], ['COMPLETED', 'IN_PROGRESS']);
+  let waits = 0; let probes = 0;
+  const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest, delay: async () => { waits++; }, probe: async () => { probes++; return [{ name: 'HTTP', ok: false }]; } });
+  assert.equal(waits, 0);
+  assert.equal(probes, 1);
+  assert.equal(f.calls.filter(c => c[1] === 'describe-services').length, 2);
+  assert.deepEqual(checks.filter(c => !c.ok).map(c => c.name), ['HTTP', 'after HTTP: rollout completed']);
+});
+
+test('rollout readiness stops waiting when identity changes during settling', async () => {
+  const { contract } = fixture();
+  const f = observer(contract, [taskArn, previousTaskArn], ['IN_PROGRESS']);
+  let waits = 0;
+  const checks = await release.checkRelease({ aws: f.aws, contract, taskArn, digest, delay: async () => { waits++; }, probe: async () => [{ name: 'HTTP', ok: true }] });
+  assert.equal(waits, 1);
+  assert.equal(f.calls.filter(c => c[1] === 'describe-services').length, 3);
+  assert.ok(checks.some(c => c.name === 'before HTTP: primary revision' && !c.ok));
 });
