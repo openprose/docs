@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { appendFile, chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -131,31 +132,41 @@ async function probeSurface(contract, connectHost) {
     throw new Error('HTTP probes unavailable');
   }
 }
-export async function checkRelease({ aws, contract, taskArn, digest, probeConnectHost, probe = probeSurface }) {
+export async function checkRelease({ aws, contract, taskArn, digest, probeConnectHost, probe = probeSurface, delay = sleep }) {
   requireTaskArn(contract, taskArn);
   requireCondition(digestPattern.test(digest), 'Wrong requested digest');
   const checks = [];
-  const identity = async label => {
-    try { checks.push(...verifyDeployment({ taskArn, digest, desiredCount: 1 }, await observe(aws, contract)).map(c => ({ ...c, name: `${label}: ${c.name}` }))); }
-    catch { checks.push({ name: `${label}: observation available`, ok: false }); }
+  const identity = async (label, settle = false) => {
+    try {
+      let result;
+      for (let attempt = 0; ; attempt++) {
+        const observed = await observe(aws, contract);
+        result = verifyDeployment({ taskArn, digest, desiredCount: 1 }, observed);
+        // Only rollout completion may lag while every other identity check passes.
+        if (!settle || attempt === 12 || observed.rolloutState !== 'IN_PROGRESS' || !result.every((c, index) => index === 1 || c.ok)) break;
+        await delay(5000);
+      }
+      checks.push(...result.map(c => ({ ...c, name: `${label}: ${c.name}`, phase: label })));
+    }
+    catch { checks.push({ name: `${label}: observation available`, ok: false, phase: label }); }
   };
-  await identity('before HTTP');
+  await identity('before HTTP', true);
   try {
     const surface = await probe(contract, probeConnectHost);
     requireCondition(Array.isArray(surface) && surface.length > 0 && surface.every(c => typeof c.name === 'string' && typeof c.ok === 'boolean'), 'Invalid HTTP result');
-    checks.push(...surface);
-  } catch { checks.push({ name: 'HTTP probes available', ok: false }); }
+    checks.push(...surface.map(c => ({ ...c, phase: 'HTTP' })));
+  } catch { checks.push({ name: 'HTTP probes available', ok: false, phase: 'HTTP' }); }
   await identity('after HTTP');
   return checks;
 }
-export async function checkStagedRelease({ aws, contract, digest, probeConnectHost, probe = probeSurface }) {
+export async function checkStagedRelease({ aws, contract, digest, probeConnectHost, probe = probeSurface, delay = sleep }) {
   validateContract(contract, 'staging');
   let taskArn;
   try {
     taskArn = (await observe(aws, contract)).primaryTaskArn;
     requireTaskArn(contract, taskArn);
   } catch { throw new Error('Staging revision unavailable'); }
-  return checkRelease({ aws, contract, taskArn, digest, probeConnectHost, probe });
+  return checkRelease({ aws, contract, taskArn, digest, probeConnectHost, probe, delay });
 }
 export async function notifyRelease({ aws, contract, alertsTopicArn, event }) {
   requireCondition(event.environment === contract.environment && ['release', 'promote', 'bootstrap', 'recover'].includes(event.operation), 'Invalid notification operation');
@@ -262,6 +273,14 @@ async function main() {
           ? await checkStagedRelease({ aws, ...state })
           : await checkRelease({ aws, ...state, taskArn: requestedTaskArn });
         await privateFile('checks.json', checks);
+        if (checks.some(c => !c.ok)) {
+          console.error('Release verification failed.');
+          for (const [phase, label] of [['before HTTP', 'identity before HTTP'], ['HTTP', 'HTTP'], ['after HTTP', 'identity after HTTP']]) {
+            const group = checks.filter(c => c.phase === phase);
+            const failed = group.flatMap((c, index) => c.ok ? [] : [index + 1]);
+            console.error(`${label}: ${failed.length}/${group.length} failed; indexes ${failed.slice(0, 10).join(',') || 'none'}${failed.length > 10 ? '; additional indexes omitted' : ''}`);
+          }
+        }
         requireCondition(checks.every(c => c.ok), 'Release checks failed');
         console.log('Requested revision, image and HTTP checks passed.');
       } else {
