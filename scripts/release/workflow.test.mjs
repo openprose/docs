@@ -56,7 +56,6 @@ test('verify-only omits render, deployment and notification; reusable production
   assert.match(j.steps.find(s=>s.id==='check').if,/!inputs.register_only/);
   assert.equal(j.steps.some(s=>s.uses?.startsWith('aws-actions/amazon-ecs-deploy-task-definition@')),false);
   for (const source of [w['release-docs.yml'].jobs.build,j]) { const checkout=source.steps.find(s=>s.uses?.startsWith('actions/checkout@')); assert.equal(checkout.with.ref,'${{ github.sha }}'); }
-  assert.equal(w['deploy-docs.yml'].concurrency.group,'docs-production'); assert.equal(w['deploy-docs.yml'].concurrency['cancel-in-progress'],false);
 });
 test('masking precedes AWS actions; private values stay in same-job inputs, notifications preserve failed checks', async () => {
   const w=await workflows(); const jobs=[w['release-docs.yml'].jobs.build,w['deploy-ecs.yml']?.jobs.deploy];

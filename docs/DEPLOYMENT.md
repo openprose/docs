@@ -11,10 +11,11 @@ existing production and previous-project analytics inputs; preview disables
 production analytics. Docker uses the pinned base and pnpm version and bypasses
 the model-backed build hook.
 
-Merging this source stops automatic Fly releases. It changes no running service,
-DNS, infrastructure or GitHub configuration. Ordinary AWS delivery stays disabled
-unless repository variable `DOCS_AWS_ENABLED` equals `true`. Deliberate bootstrap
-and recovery dispatches remain available before enablement on protected main.
+Docs delivery uses AWS ECS and retained ECR images. Ordinary delivery requires
+repository variable `DOCS_AWS_ENABLED` to equal `true`. Deliberate bootstrap and
+recovery dispatches remain available when ordinary delivery is disabled on
+protected main. Source configuration does not establish the state of provider
+resources or GitHub settings.
 
 Configure these controls before relying on AWS delivery:
 
@@ -30,9 +31,9 @@ Configure these controls before relying on AWS delivery:
   to each role's IAM unique role ID: repository scope for build, overridden in
   each environment for release. Obtain these privately from IAM metadata.
 - Set repository and environment `DOCS_RELEASE_CONFIG` secrets as described below.
-  Keep the existing `NEXT_PUBLIC_POSTHOG_KEY`,
-  `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` and `FLY_API_TOKEN` secrets. This change
-  does not change analytics projects or transfer history.
+  Keep the existing `NEXT_PUBLIC_POSTHOG_KEY` and
+  `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` secrets. Changing these inputs does
+  not transfer analytics history.
 - Keep Actions runner and step debugging disabled. Preflight rejects debug mode
   or a missing role ID before any AWS action. Review hosted logs privately before
   enabling routine delivery; offline fixtures do not prove runner redaction.
@@ -104,26 +105,19 @@ environment's protected job. It requires no receipt or old run selector. Recover
 staging first when useful, then deliberately select the same retained tag for
 production. Recovery executes trusted main; the chosen image may be older.
 
-## Bootstrap without changing public DNS
+## Bootstrap registration
 
-1. Apply infrastructure with services disabled to create repositories, current
-   configuration objects and OIDC roles. Keep public DNS on Fly. Configure the
-   secrets and environments above, leaving ordinary delivery disabled.
-2. Dispatch `operation: bootstrap` on main. After both images pass, the jobs
-   register their bootstrap revisions. Retrieve the resulting task definition ARNs
-   privately from ECS, matching family, image digest and workflow timing. Public
-   job outputs and summaries do not expose registration ARNs.
-3. Explicitly enable services with those registered revisions in the second
-   infrastructure apply. Keep public DNS on Fly.
-4. Dispatch recovery for staging using the bootstrap build tag, then production
-   through a separate deliberate dispatch. These runs use the current configuration
-   and check the requested task revision, running image digest, one-task counts and HTTP
-   behavior before and after probes. They can register a new revision of the same
-   image; no old registration record is a prerequisite.
-5. Privately confirm environment protection, OIDC scope, successful and failed-job
-   reruns, ECS rollback rejection, routing, notifications and independent failure
-   alerts before approving `DOCS_AWS_ENABLED=true`. Preserve the separate DNS
-   approval and seven-day observation period with Fly available as fallback.
+Prepare and review the required infrastructure, current configuration, secrets
+and environments separately before dispatching `operation: bootstrap` on main.
+The workflow builds and checks both image variants, then registers staging and
+production task revisions. It never creates or updates services, probes their
+health or changes DNS.
+
+Retrieve the registered task definition ARNs privately from ECS, matching family,
+image digest and workflow timing. Public job outputs and summaries do not expose
+registration ARNs. Service provisioning or reconstruction requires a separate
+infrastructure procedure; registration alone does not establish a running service.
+Use `operation: recover` with a retained image tag to recover an existing service.
 
 ## Rollout, recovery and limits
 
@@ -146,7 +140,7 @@ HTTP checks connect directly to the approved ALB while preserving the origin Hos
 TLS server name, certificate verification and IPv4/IPv6 lookup behavior. Identity
 and one-task counts are observed before and after HTTP probes. This cannot make
 service mutation atomic. Staging jobs share non-canceling `docs-staging`
-concurrency; AWS production and Fly recovery share `docs-production`. GitHub may
+concurrency; production jobs share non-canceling `docs-production`. GitHub may
 replace pending jobs even when cancellation is disabled; re-dispatch a retained
 candidate deliberately when needed.
 
@@ -165,17 +159,9 @@ source-derived image tag. Keep debug disabled and inspect infrastructure diagnos
 through private operator tools.
 
 Retain at least 30 days of promoted images and always keep current and previous
-releases. This change adds no automatic deletion. The accepted mixed-release asset
-limitation remains: clients holding an older page can request assets from a newer
+releases. The release workflow performs no automatic image deletion. The accepted
+mixed-release asset limitation remains: clients holding an older page can request assets from a newer
 single-task deployment. Treat it as a rollout constraint when diagnosing failures.
-
-Before retiring automatic Fly delivery, privately retain a known-good immutable
-`registry.fly.io/openprose-docs@sha256:<digest>` image. **Recover Docs on Fly.io**
-remains dispatch-only on protected main with no rebuild. Its deliberate dispatch
-is the production approval action.
-Before the DNS switch its public robots check observes Fly. Afterward verify Fly
-through an approved direct target before a DNS recovery; the public-host check
-alone does not prove Fly health. No workflow here changes DNS.
 
 Run `pnpm test:release` for offline release tests. Source tests, mocked action
 exercises and local container checks do not establish live IAM permissions,

@@ -57,19 +57,16 @@ The Docker build accepts these inputs. The trusted retained-image build
 sets production mode and consumes the existing `NEXT_PUBLIC_POSTHOG_KEY` secret.
 Production preflight in the workflow and Docker build also requires a separately
 supplied `NEXT_PUBLIC_POSTHOG_LEGACY_PROJECT_TOKEN` for the previous Docs project.
-That additional build input is not configured by this change. Switch the current
-key secret to the approved shared project only as part of coordinated
-rollout; this source change does not update any secret or transfer old Docs
+Verify both analytics secrets before building; changing a key does not transfer
 history from the previous project. An explicit previous-project opt-out (`0`) in local
 storage or its cookie prevents new-project initialization; unknown or unavailable
 legacy storage leaves the current SDK capture policy in place. The previous token
-is checked as supplied, without guessing it from the new token. Merging this
-change stops automatic Fly releases while leaving the running Fly service
-untouched. AWS delivery is disabled until explicitly configured and
-enabled. Production delivery and Fly recovery use approved retained images;
-see [Deployment](docs/DEPLOYMENT.md) for the release, bootstrap and retained-image
-recovery operations. Staging verification precedes protected production approval;
-recovery uses the selected retained tag with current task configuration.
+is checked as supplied, without guessing it from the new token. AWS delivery uses
+retained images; see [Deployment](docs/DEPLOYMENT.md) for configuration, release, bootstrap, promotion
+and recovery operations. Ordinary delivery requires `DOCS_AWS_ENABLED=true`.
+Production promotion requires a deliberate workflow dispatch and successful
+staging verification; recovery uses the selected retained tag with current task
+configuration.
 
 The single client link observer emits `site:link_click` for the public Docs and
 language repositories, their linked source references, and the examples
