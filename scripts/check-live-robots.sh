@@ -3,9 +3,9 @@ set -euo pipefail
 
 # Checks a running docs site's /robots.txt the way a crawler fetches it:
 # HTTP 200, text/plain, a Googlebot allow rule, and the canonical sitemap.
-# A 5xx on this route makes Google stop crawling the whole site, and the Fly
-# health check only probes /, so a healthy homepage can hide it. The body
-# checks mirror the public-mode checks in scripts/smoke-standalone.ts.
+# A 5xx on this route makes Google stop crawling the whole site; a healthy
+# homepage can hide it. The body checks mirror the public-mode checks in
+# scripts/smoke-standalone.ts.
 #
 # Usage: scripts/check-live-robots.sh [BASE_URL]
 #   BASE_URL defaults to https://docs.prose.md. Point it at a local
